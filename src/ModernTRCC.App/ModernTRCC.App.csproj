@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>ModernTRCC.App</RootNamespace>
+    <AssemblyName>ModernTRCC</AssemblyName>
+    <Version>1.0.1</Version>
+    <Description>Modern TRCC - Water Cooling Screen Controller</Description>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- 全局应用图标（exe / 窗口 / 托盘） -->
+    <ApplicationIcon>Resources\TRCC.ico</ApplicationIcon>
+    <!-- 发布时不复制引用的 xml 文档，减少目录杂乱 -->
+    <AllowedReferenceRelatedFileExtensions>.pdb</AllowedReferenceRelatedFileExtensions>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ModernTRCC.Core\ModernTRCC.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="ui\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Resources\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- 单文件发布会把 ApplicationIcon (.ico) 从输出中排除，
+       这里在发布后显式复制图标到 publish\Resources，供窗口/托盘运行时使用 -->
+  <Target Name="CopyAppIconToPublish" AfterTargets="Publish">
+    <Copy SourceFiles="Resources\TRCC.ico;Resources\TRCC.png"
+          DestinationFolder="$(PublishDir)Resources"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

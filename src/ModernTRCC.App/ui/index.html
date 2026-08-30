@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern TRCC</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- 动态背景 -->
+<div class="bg-mesh"></div>
+
+<!-- 主容器 -->
+<div class="app">
+
+    <!-- 自定义标题栏 -->
+    <header class="titlebar">
+        <div class="titlebar-left">
+            <div class="logo">
+                <span class="logo-text">Modern TRCC</span>
+            </div>
+        </div>
+
+        <!-- 顶部导航 -->
+        <nav class="top-nav">
+            <button class="top-nav-item active" data-page="dashboard">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+                <span data-i18n="nav.dashboard">仪表盘</span>
+            </button>
+            <button class="top-nav-item" data-page="media">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15L16 10L5 21"/></svg>
+                <span data-i18n="nav.media">媒体库</span>
+            </button>
+            <button class="top-nav-item" data-page="display">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <span data-i18n="nav.display">显示</span>
+            </button>
+            <button class="top-nav-item" data-page="system">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <span data-i18n="nav.settings">设置</span>
+            </button>
+            <button class="top-nav-item" data-page="diagnostics">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                <span data-i18n="nav.deviceInfo">设备信息</span>
+            </button>
+        </nav>
+
+        <!-- 窗口控制按钮 -->
+        <div class="window-controls">
+            <button class="win-btn" id="minBtn" data-i18n-title="title.min" title="最小化">
+                <svg width="12" height="12" viewBox="0 0 12 12"><rect x="2" y="5.5" width="8" height="1" fill="currentColor"/></svg>
+            </button>
+            <button class="win-btn win-btn-close" id="closeBtn" data-i18n-title="title.close" title="关闭">
+                <svg width="12" height="12" viewBox="0 0 12 12"><line x1="2" y1="2" x2="10" y2="10" stroke="currentColor" stroke-width="1.5"/><line x1="10" y1="2" x2="2" y2="10" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- 主内容 -->
+    <main class="content">
+
+        <!-- ============ 仪表盘 ============ -->
+        <section class="page active" id="page-dashboard">
+            <header class="page-header">
+                <div>
+                    <h1 data-i18n="page.dashboard.title">仪表盘</h1>
+                    <p data-i18n="page.dashboard.sub">管理你的水冷屏幕和媒体内容</p>
+                </div>
+                <div class="header-right">
+                    <div class="device-badge" id="deviceBadge">
+                        <div class="status-dot" id="statusDot"></div>
+                        <span id="statusText">未连接</span>
+                    </div>
+                    <button class="btn btn-primary" onclick="scanDevices()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+                        <span data-i18n="btn.scan">扫描设备</span>
+                    </button>
+                </div>
+            </header>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-blue">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    </div>
+                    <div class="stat-value" id="statDevices">0</div>
+                    <div class="stat-label" data-i18n="stat.devices">已连接设备</div>
+                    <div class="stat-sub" id="statDeviceName">未连接</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-green">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15L16 10L5 21"/></svg>
+                    </div>
+                    <div class="stat-value" id="statImages">0</div>
+                    <div class="stat-label" data-i18n="stat.images">图片素材</div>
+                    <div class="stat-sub" data-i18n="stat.imagesSub">PNG / JPG / BMP</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-orange">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                    </div>
+                    <div class="stat-value" id="statVideos">0</div>
+                    <div class="stat-label" data-i18n="stat.videos">视频素材</div>
+                    <div class="stat-sub" data-i18n="stat.videosSub">MP4 / AVI / GIF</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-cyan">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                    </div>
+                    <div class="stat-value" id="statPlayback">空闲</div>
+                    <div class="stat-label" data-i18n="stat.playback">播放状态</div>
+                    <div class="stat-sub"><span id="statFps">-- FPS</span></div>
+                </div>
+            </div>
+
+            <div class="dashboard-bottom">
+                <div class="card preview-card">
+                    <div class="card-header">
+                        <h2 data-i18n="dash.preview">屏幕预览</h2>
+                        <button class="btn btn-ghost btn-sm" onclick="clearDisplay()"><span data-i18n="btn.clear">清除屏幕</span></button>
+                    </div>
+                    <div class="screen-preview" id="screenPreview">
+                        <img class="screen-preview-img" id="screenPreviewImg" alt="">
+                        <div class="screen-resolution" id="screenRes">--×--</div>
+                        <div class="preview-info" id="previewInfo"></div>
+                    </div>
+                </div>
+                <div class="card test-card">
+                    <div class="card-header">
+                        <h2 data-i18n="dash.testPattern">测试图案</h2>
+                    </div>
+                    <p class="card-desc" data-i18n="dash.testDesc">选择测试图案验证屏幕是否正常工作</p>
+                    <div class="test-grid">
+                        <button class="test-btn" onclick="sendTestPattern('colorbars')">
+                            <div class="test-icon test-icon-bars"></div>
+                            <span data-i18n="test.bars">彩条</span>
+                        </button>
+                        <button class="test-btn" onclick="sendTestPattern('gradient')">
+                            <div class="test-icon test-icon-gradient"></div>
+                            <span data-i18n="test.gradient">渐变</span>
+                        </button>
+                        <button class="test-btn" onclick="sendTestPattern('grid')">
+                            <div class="test-icon test-icon-grid"></div>
+                            <span data-i18n="test.grid">网格</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ 媒体库 ============ -->
+        <section class="page" id="page-media">
+            <header class="page-header">
+                <div>
+                    <h1 data-i18n="page.media.title">媒体库</h1>
+                    <p data-i18n="page.media.sub">管理你的图片和视频素材</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-ghost" onclick="uploadMedia('image')"><span data-i18n="btn.uploadImage">上传图片</span></button>
+                    <button class="btn btn-primary" onclick="uploadMedia('video')"><span data-i18n="btn.uploadVideo">上传视频</span></button>
+                </div>
+            </header>
+
+            <div class="filter-bar">
+                <div class="filter-tabs">
+                    <button class="filter-tab active" data-filter="all" onclick="setFilter('all')"><span data-i18n="filter.all">全部</span></button>
+                    <button class="filter-tab" data-filter="image" onclick="setFilter('image')"><span data-i18n="filter.image">图片</span></button>
+                    <button class="filter-tab" data-filter="video" onclick="setFilter('video')"><span data-i18n="filter.video">视频</span></button>
+                </div>
+                <input type="text" class="search-input" placeholder="搜索..." id="searchInput" oninput="filterMedia()" data-i18n-placeholder="search.placeholder">
+            </div>
+
+            <div class="media-grid" id="mediaGrid">
+                <div class="empty-state" id="mediaEmpty">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <h3 data-i18n="media.empty.title">暂无媒体文件</h3>
+                    <p data-i18n="media.empty.desc">上传一些图片或视频开始使用吧</p>
+                    <button class="btn btn-primary" onclick="uploadMedia('all')" data-i18n="btn.uploadFile">上传文件</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ 显示 ============ -->
+        <section class="page" id="page-display">
+            <div class="page-split">
+                <aside class="page-sidebar">
+                    <div class="sidebar-title">
+                        <h1 data-i18n="page.display.title">显示</h1>
+                        <p data-i18n="page.display.sub">调整屏幕显示效果和性能参数</p>
+                    </div>
+                    <button class="sidebar-item active" data-section="image"><span data-i18n="display.imageAdjust">图像调整</span></button>
+                    <button class="sidebar-item" data-section="performance"><span data-i18n="display.performance">性能设置</span></button>
+                </aside>
+                <div class="page-content">
+                    <div class="section-pane active" id="pane-image">
+                        <h3 class="section-title" data-i18n="display.imageAdjust">图像调整</h3>
+                        <div class="slider-group">
+                            <div class="slider-row">
+                                <div class="slider-label">
+                                    <span data-i18n="display.brightness">亮度</span>
+                                    <span class="slider-value" id="valBrightness">100%</span>
+                                </div>
+                                <input type="range" min="0" max="200" value="100" id="brightness" oninput="updateSlider('brightness', this.value, '%')">
+                            </div>
+                            <div class="slider-row">
+                                <div class="slider-label">
+                                    <span data-i18n="display.contrast">对比度</span>
+                                    <span class="slider-value" id="valContrast">100%</span>
+                                </div>
+                                <input type="range" min="0" max="200" value="100" id="contrast" oninput="updateSlider('contrast', this.value, '%')">
+                            </div>
+                            <div class="slider-row">
+                                <div class="slider-label">
+                                    <span data-i18n="display.saturation">饱和度</span>
+                                    <span class="slider-value" id="valSaturation">100%</span>
+                                </div>
+                                <input type="range" min="0" max="200" value="100" id="saturation" oninput="updateSlider('saturation', this.value, '%')">
+                            </div>
+                        </div>
+                        <div class="option-group">
+                            <label class="option-label" data-i18n="display.rotation">屏幕旋转</label>
+                            <div class="option-tabs">
+                                <button class="option-tab active" data-rotation="0" onclick="setOption('rotation', 0, this)">0°</button>
+                                <button class="option-tab" data-rotation="90" onclick="setOption('rotation', 90, this)">90°</button>
+                                <button class="option-tab" data-rotation="180" onclick="setOption('rotation', 180, this)">180°</button>
+                                <button class="option-tab" data-rotation="270" onclick="setOption('rotation', 270, this)">270°</button>
+                            </div>
+                        </div>
+                        <div class="option-group">
+                            <label class="option-label" data-i18n="display.fitMode">缩放模式</label>
+                            <div class="option-tabs">
+                                <button class="option-tab active" data-fit="cover" onclick="setOption('fit', 'cover', this)" data-i18n="display.fit.cover">填充</button>
+                                <button class="option-tab" data-fit="contain" onclick="setOption('fit', 'contain', this)" data-i18n="display.fit.contain">适应</button>
+                                <button class="option-tab" data-fit="fill" onclick="setOption('fit', 'fill', this)" data-i18n="display.fit.fill">拉伸</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section-pane" id="pane-performance">
+                        <h3 class="section-title" data-i18n="display.performance">性能设置</h3>
+                        <div class="slider-group">
+                            <div class="slider-row">
+                                <div class="slider-label">
+                                    <div class="slider-label-title">
+                                        <span data-i18n="display.targetFps">屏幕刷新率</span>
+                                        <span class="slider-desc" data-i18n="display.targetFps.desc">每秒向屏幕发送的帧数，越高越流畅但占用更多USB带宽</span>
+                                    </div>
+                                    <span class="slider-value" id="valTargetFps">30 FPS</span>
+                                </div>
+                                <input type="range" min="1" max="60" value="30" id="targetFps" oninput="updateSlider('targetFps', this.value, ' FPS')">
+                            </div>
+                            <div class="slider-row">
+                                <div class="slider-label">
+                                    <div class="slider-label-title">
+                                        <span data-i18n="display.videoFps">视频播放帧率</span>
+                                        <span class="slider-desc" data-i18n="display.videoFps.desc">视频每秒播放的帧数，决定播放速度，通常保持与原视频一致</span>
+                                    </div>
+                                    <span class="slider-value" id="valVideoFps">30 FPS</span>
+                                </div>
+                                <input type="range" min="10" max="60" value="30" id="videoFps" oninput="updateSlider('videoFps', this.value, ' FPS')">
+                            </div>
+                        </div>
+                        <div class="toggle-row">
+                            <div class="toggle-info">
+                                <span data-i18n="display.loop">循环播放视频</span>
+                                <span class="toggle-desc" data-i18n="display.loop.desc">视频结束后自动重播</span>
+                            </div>
+                            <label class="toggle"><input type="checkbox" id="loopVideo" checked><span class="toggle-slider"></span></label>
+                        </div>
+                    </div>
+
+                    <div class="settings-actions">
+                        <button class="btn btn-ghost" onclick="resetSettings()"><span data-i18n="btn.reset">重置</span></button>
+                        <button class="btn btn-primary" onclick="applySettings()"><span data-i18n="btn.apply">应用设置</span></button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ 设置 ============ -->
+        <section class="page" id="page-system">
+            <div class="page-split">
+                <aside class="page-sidebar">
+                    <div class="sidebar-title">
+                        <h1 data-i18n="page.system.title">设置</h1>
+                        <p data-i18n="page.system.sub">配置应用启动、外观和系统选项</p>
+                    </div>
+                    <button class="sidebar-item active" data-section="startup"><span data-i18n="sys.startup">启动选项</span></button>
+                    <button class="sidebar-item" data-section="about"><span data-i18n="sys.about">关于</span></button>
+                </aside>
+                <div class="page-content">
+                    <div class="section-pane active" id="pane-startup">
+                        <h3 class="section-title" data-i18n="sys.startup">启动选项</h3>
+
+                        <div class="section-block">
+                            <h4 class="section-subtitle" data-i18n="sys.autostart">开机自启动</h4>
+                            <div class="autostart-status" id="autoStartStatus">
+                                <div class="autostart-dot"></div>
+                                <div>
+                                    <div class="autostart-text" id="autoStartText" data-i18n="sys.autostart.off">自启动未启用</div>
+                                    <div class="autostart-desc" data-i18n="sys.autostart.desc">应用将在系统启动时自动运行</div>
+                                </div>
+                                <button class="btn btn-primary btn-sm" id="autoStartBtn" onclick="toggleAutoStart()" data-i18n="btn.enable">启用</button>
+                            </div>
+                            <div class="toggle-row">
+                                <div class="toggle-info">
+                                    <span data-i18n="sys.startMinimized">启动时最小化</span>
+                                    <span class="toggle-desc" data-i18n="sys.startMinimized.desc">自启动时以最小化方式运行</span>
+                                </div>
+                                <label class="toggle"><input type="checkbox" id="startMinimized"><span class="toggle-slider"></span></label>
+                            </div>
+                            <div class="toggle-row">
+                                <div class="toggle-info">
+                                    <span class="text-warning">⚡ <span data-i18n="sys.fastStartup">快速启动（高优先级）</span></span>
+                                    <span class="toggle-desc" data-i18n="sys.fastStartup.desc">注册为登录时最高优先级任务，确保最快启动</span>
+                                </div>
+                                <label class="toggle"><input type="checkbox" id="fastStartup" checked><span class="toggle-slider"></span></label>
+                            </div>
+                        </div>
+
+                        <div class="section-block">
+                            <h4 class="section-subtitle" data-i18n="sys.autoplay">开机自动播放</h4>
+                            <p class="section-desc" data-i18n="sys.autoplay.desc">启动并连接设备后自动播放选定的媒体</p>
+                            <div class="toggle-row">
+                                <div class="toggle-info">
+                                    <span data-i18n="sys.enableAutoplay">启用自动播放</span>
+                                    <span class="toggle-desc" data-i18n="sys.enableAutoplay.desc">开机后自动播放下方选择的图像或视频</span>
+                                </div>
+                                <label class="toggle"><input type="checkbox" id="enableAutoplay"><span class="toggle-slider"></span></label>
+                            </div>
+                            <div class="option-group" style="margin-top:12px">
+                                <label class="option-label" data-i18n="sys.autoplayMedia">播放媒体</label>
+                                <select class="select" id="autoplayMedia"></select>
+                            </div>
+                        </div>
+
+                        <div class="section-block">
+                            <div class="toggle-row">
+                                <div class="toggle-info">
+                                    <span data-i18n="sys.minimizeToTray">最小化到系统托盘</span>
+                                    <span class="toggle-desc" data-i18n="sys.minimizeToTray.desc">关闭窗口时最小化到托盘，继续后台运行</span>
+                                </div>
+                                <label class="toggle"><input type="checkbox" id="minimizeToTray" checked><span class="toggle-slider"></span></label>
+                            </div>
+                            <div class="option-group" style="margin-top:8px">
+                                <label class="option-label" data-i18n="sys.language">语言</label>
+                                <select class="select" id="language">
+                                    <option value="zh-CN">简体中文</option>
+                                    <option value="zh-TW">繁體中文</option>
+                                    <option value="en">English</option>
+                                    <option value="ja">日本語</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section-pane" id="pane-about">
+                        <h3 class="section-title" data-i18n="sys.about">关于</h3>
+                        <div class="about-card">
+                            <div class="about-logo">
+                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none"><path d="M12 2C12 2 5 10 5 15C5 18.866 8.13401 22 12 22C15.866 22 19 18.866 19 15C19 10 12 2 12 2Z" stroke="#c8a45e" stroke-width="2"/><path d="M9 15C9 16.657 10.343 18 12 18" stroke="#c8a45e" stroke-width="2" stroke-linecap="round"/></svg>
+                            </div>
+                            <h3>Modern TRCC</h3>
+                            <p class="about-version" data-i18n="sys.version">版本 1.0.1</p>
+                            <div class="about-info">
+                                <div class="about-row"><span data-i18n="sys.author">作者</span><span>穗月</span></div>
+                                <div class="about-row"><span data-i18n="sys.protocol">协议</span><span>USB / HID / SCSI / JPEG</span></div>
+                            </div>
+                            <p class="about-copy" data-i18n="sys.aboutCopy">支持利民 Thermalright 全系列水冷屏幕</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ 设备信息 ============ -->
+        <section class="page" id="page-diagnostics">
+            <div class="page-split">
+                <aside class="page-sidebar">
+                    <div class="sidebar-title">
+                        <h1 data-i18n="page.diagnostics.title">设备信息</h1>
+                        <p data-i18n="page.diagnostics.sub">查看所有USB设备信息，帮助识别水冷屏幕</p>
+                    </div>
+                    <button class="sidebar-item active" data-section="devices"><span data-i18n="diag.sidebar.devices">设备列表</span></button>
+                    <button class="sidebar-item" data-section="logs"><span data-i18n="diag.logs">实时日志</span></button>
+                </aside>
+                <div class="page-content">
+                    <div class="section-pane active" id="pane-devices">
+                        <div class="section-header">
+                            <h3 class="section-title" data-i18n="diag.known">已知设备列表</h3>
+                            <button class="btn btn-primary btn-sm" onclick="refreshDiagnostics()">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+                                <span data-i18n="diag.refresh">刷新设备列表</span>
+                            </button>
+                        </div>
+                        <div class="known-devices" id="knownDevices"></div>
+
+                        <h3 class="section-title" style="margin-top:24px" data-i18n="diag.allUsb">所有USB设备</h3>
+                        <p class="section-desc" data-i18n="diag.allUsb.desc">找到你的水冷屏幕的 VID/PID 告诉我</p>
+                        <div class="usb-device-list" id="usbDeviceList">
+                            <div class="empty-state" style="padding:30px">
+                                <p data-i18n="diag.clickRefresh">点击「刷新设备列表」扫描</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section-pane" id="pane-logs">
+                        <div class="section-header">
+                            <h3 class="section-title" data-i18n="diag.logs">实时日志</h3>
+                            <button class="btn btn-ghost btn-sm" onclick="clearLogs()" data-i18n="btn.clearLogs">清除</button>
+                        </div>
+                        <div class="log-panel" id="logPanel">
+                            <div class="log-empty" data-i18n="diag.waitingLogs">等待日志...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+</div>
+
+<!-- Toast 通知 -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- 媒体右键菜单 -->
+<div class="ctx-menu" id="ctxMenu" style="display:none">
+    <button class="ctx-item" id="ctxPlay">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+        <span data-i18n="ctx.play">播放</span>
+    </button>
+    <button class="ctx-item ctx-danger" id="ctxDelete">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+        <span data-i18n="ctx.delete">删除</span>
+    </button>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
