@@ -1,0 +1,40 @@
+# ===== .NET 构建输出 =====
+bin/
+obj/
+*.user
+
+# ===== 发布输出 =====
+publish/
+
+# ===== 安装包输出 =====
+installer/
+*.exe
+
+# ===== FFmpeg 运行时（体积大，需自行下载） =====
+ffmpeg/
+
+# ===== WebView2 运行时数据 =====
+ModernTRCC.exe.WebView2/
+
+# ===== 运行时缓存 =====
+thumbnails/
+
+# ===== 用户媒体数据 =====
+media/
+
+# ===== IDE =====
+.vs/
+.idea/
+*.suo
+*.userosscache
+*.sln.docstates
+
+# ===== 测试脚本 =====
+test_*.ps1
+check_*.ps1
+*.csx
+
+# ===== 系统文件 =====
+Thumbs.db
+Desktop.ini
+.DS_Store
