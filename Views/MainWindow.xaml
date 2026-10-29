@@ -1,0 +1,15 @@
+<Window x:Class="ModernTRCC.App.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="Modern TRCC"
+        Width="1200" Height="750"
+        MinWidth="900" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        AllowsTransparency="False"
+        Background="#0A0A0B">
+
+    <wv2:WebView2 x:Name="WebView"
+                  DefaultBackgroundColor="#0A0A0B"/>
+</Window>
