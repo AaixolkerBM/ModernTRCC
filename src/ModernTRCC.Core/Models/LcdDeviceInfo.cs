@@ -11,6 +11,7 @@ public class LcdDeviceInfo
     public int Height { get; set; }
     public bool IsInitialized { get; set; }
     public string? SerialNumber { get; set; }
+    public string? HidDevicePath { get; set; }
     public byte Fbl { get; set; }
     public byte Pm { get; set; }
 

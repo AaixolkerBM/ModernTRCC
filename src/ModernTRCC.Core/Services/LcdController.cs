@@ -40,6 +40,7 @@ public class LcdController : IDisposable, INotifyPropertyChanged
     #region 字段
 
     private UsbDevice? _activeDevice;
+    private HidLcdTransport? _hidDevice;
     private UsbEndpointWriter? _writer;
     private UsbEndpointReader? _reader;
     private readonly object _sendLock = new();
@@ -70,7 +71,7 @@ public class LcdController : IDisposable, INotifyPropertyChanged
     }
 
     public long FrameCount => _frameCount;
-    public bool IsConnected => _activeDevice != null && _isRunning;
+    public bool IsConnected => (_activeDevice != null || _hidDevice != null) && _isRunning;
 
     /// <summary>最近一次入队的 RGB888 帧（用于实时预览镜像）</summary>
     public byte[]? LastFrame { get; private set; }
@@ -96,6 +97,14 @@ public class LcdController : IDisposable, INotifyPropertyChanged
     public int ScanDevices()
     {
         Devices.Clear();
+        foreach (var path in HidLcdTransport.FindDevices(0x0416, 0x5302))
+        {
+            Devices.Add(new LcdDeviceInfo
+            {
+                Name = "Thermalright HID LCD", Brand = "Thermalright", Vid = 0x0416, Pid = 0x5302,
+                Type = LcdDeviceType.Hid, HidDevicePath = path, Width = 480, Height = 480
+            });
+        }
         var allDevices = UsbDevice.AllDevices;
 
         foreach (var (vid, pid, type, name, brand) in KnownDevices)
@@ -104,6 +113,7 @@ public class LcdController : IDisposable, INotifyPropertyChanged
             {
                 if (reg.Vid == vid && reg.Pid == pid)
                 {
+                    if (Devices.Any(d => d.Vid == vid && d.Pid == pid && d.HidDevicePath != null)) continue;
                     var info = new LcdDeviceInfo
                     {
                         Name = name, Brand = brand, Vid = vid, Pid = pid, Type = type
@@ -127,6 +137,20 @@ public class LcdController : IDisposable, INotifyPropertyChanged
         try
         {
             Disconnect();
+
+            if (deviceInfo.HidDevicePath != null)
+            {
+                _hidDevice = HidLcdTransport.Open(deviceInfo.HidDevicePath);
+                ActiveDeviceInfo = deviceInfo;
+                if (!HidLcdProtocol.TryApplyDeviceInfo(_hidDevice.Exchange(HidLcdProtocol.CreateInfoRequest()), deviceInfo))
+                {
+                    LastError = "HID 屏幕握手响应无效";
+                    Disconnect();
+                    return false;
+                }
+                StartSending(deviceInfo);
+                return true;
+            }
 
             var finder = new UsbDeviceFinder(deviceInfo.Vid, deviceInfo.Pid);
             var device = UsbDevice.OpenUsbDevice(finder);
@@ -194,25 +218,26 @@ public class LcdController : IDisposable, INotifyPropertyChanged
             // 记录握手结果
             ErrorOccurred?.Invoke(this, $"[INFO] 握手成功! 分辨率: {deviceInfo.Width}x{deviceInfo.Height}");
 
-            deviceInfo.IsInitialized = true;
-            _isRunning = true;
-            _sendThread = new Thread(SendThreadProc)
-            {
-                IsBackground = true,
-                Priority = ThreadPriority.AboveNormal
-            };
-            _sendThread.Start();
-
-            LastError = "";
-            DeviceConnected?.Invoke(this, deviceInfo);
+            StartSending(deviceInfo);
             return true;
         }
         catch (Exception ex)
         {
             LastError = ex.Message;
+            Disconnect();
             ErrorOccurred?.Invoke(this, ex.Message);
             return false;
         }
+    }
+
+    private void StartSending(LcdDeviceInfo deviceInfo)
+    {
+        deviceInfo.IsInitialized = true;
+        _isRunning = true;
+        _sendThread = new Thread(SendThreadProc) { IsBackground = true, Priority = ThreadPriority.AboveNormal };
+        _sendThread.Start();
+        LastError = "";
+        DeviceConnected?.Invoke(this, deviceInfo);
     }
 
     public void Disconnect()
@@ -221,7 +246,9 @@ public class LcdController : IDisposable, INotifyPropertyChanged
         _frameEvent.Set();
 
         // 等待发送线程退出，确保设备句柄被释放后再重连，避免“设备被占用”
-        try { _sendThread?.Join(500); } catch { }
+        try { _hidDevice?.Dispose(); } catch { }
+        _hidDevice = null;
+        try { _sendThread?.Join(5500); } catch { }
         _sendThread = null;
 
         try
@@ -244,6 +271,7 @@ public class LcdController : IDisposable, INotifyPropertyChanged
         ActiveDeviceInfo = null;
 
         lock (_sendLock) _frameQueue.Clear();
+        LastFrame = null;
     }
 
     #endregion
@@ -335,20 +363,7 @@ public class LcdController : IDisposable, INotifyPropertyChanged
         }
         catch { }
 
-        // 验证：bytes[0-3] == [0xDA,0xDB,0xDC,0xDD], byte[12]==1, byte[16]==16
-        if (response[0] == 0xDA && response[1] == 0xDB &&
-            response[2] == 0xDC && response[3] == 0xDD &&
-            response[12] == 1 && response[16] == 16)
-        {
-            if (ActiveDeviceInfo != null)
-            {
-                // 原版 TRCC：HID 设备分辨率由响应 byte[5] 的 fbl 码决定
-                // （USBLCDNEW 写入 shareMemoryValRGB[1]=array[5]，TRCC 以它为 fbl 传入 FormCZTVInit）
-                ApplyFblResolution(ActiveDeviceInfo, response[5]);
-            }
-            return true;
-        }
-        return false;
+        return ActiveDeviceInfo != null && HidLcdProtocol.TryApplyDeviceInfo(response, ActiveDeviceInfo);
     }
 
     /// <summary>
@@ -467,7 +482,7 @@ public class LcdController : IDisposable, INotifyPropertyChanged
     /// </summary>
     public bool SendFrameRgb888(byte[] rgb888Data)
     {
-        if (!_isRunning || _activeDevice == null || ActiveDeviceInfo == null)
+        if (!IsConnected || ActiveDeviceInfo == null)
             return false;
 
         lock (_sendLock)
@@ -501,6 +516,7 @@ public class LcdController : IDisposable, INotifyPropertyChanged
     private void SendThreadProc()
     {
         var sw = new System.Diagnostics.Stopwatch();
+        var sinceLastSend = System.Diagnostics.Stopwatch.StartNew();
         while (_isRunning)
         {
             byte[]? frameData = null;
@@ -510,6 +526,10 @@ public class LcdController : IDisposable, INotifyPropertyChanged
                     frameData = _frameQueue.Dequeue();
             }
 
+            // Some HID panels revert to their boot logo when a static image is not refreshed.
+            if (frameData == null && _hidDevice != null && LastFrame != null && sinceLastSend.ElapsedMilliseconds >= 1000)
+                frameData = LastFrame;
+
             if (frameData != null)
             {
                 try
@@ -518,6 +538,7 @@ public class LcdController : IDisposable, INotifyPropertyChanged
                     LastFrame = frameData;
                     sw.Restart();
                     SendFrameInternal(frameData);
+                    sinceLastSend.Restart();
                     _frameCount++;
                     FrameSent?.Invoke(this, _frameCount);
                 }
@@ -539,7 +560,13 @@ public class LcdController : IDisposable, INotifyPropertyChanged
 
     private void SendFrameInternal(byte[] rgb888Data)
     {
-        if (_writer == null || ActiveDeviceInfo == null) return;
+        if (ActiveDeviceInfo == null) return;
+        if (_hidDevice != null)
+        {
+            _hidDevice.Write(HidLcdProtocol.CreateFrame(rgb888Data, ActiveDeviceInfo));
+            return;
+        }
+        if (_writer == null) return;
 
         switch (ActiveDeviceInfo.Type)
         {
@@ -664,26 +691,16 @@ public class LcdController : IDisposable, INotifyPropertyChanged
 
     /// <summary>
     /// HID 帧发送（原版 ThreadSendDeviceDataH 逻辑）
-    /// 20 字节头 + RGB888 数据，对齐到 512 字节
+    /// 20 字节 DA/DB/DC/DD 头 + 按型号编码的图像，对齐到 512 字节
     /// </summary>
     private void SendHidFrame(byte[] rgb888Data)
     {
         if (_writer == null || ActiveDeviceInfo == null) return;
 
-        int dataLen = rgb888Data.Length;
-        int totalLen = dataLen + 20;
-        // 对齐到 512
-        totalLen = (totalLen / 512 + (totalLen % 512 != 0 ? 1 : 0)) * 512;
-
-        byte[] frame = new byte[totalLen];
-        // 20 字节头，bytes 16-19: 数据长度（大端）
-        frame[16] = (byte)((dataLen >> 24) & 0xFF);
-        frame[17] = (byte)((dataLen >> 16) & 0xFF);
-        frame[18] = (byte)((dataLen >> 8) & 0xFF);
-        frame[19] = (byte)(dataLen & 0xFF);
-        Buffer.BlockCopy(rgb888Data, 0, frame, 20, dataLen);
-
-        _writer.Transfer(frame, 0, frame.Length, 3000, out _);
+        var frame = HidLcdProtocol.CreateFrame(rgb888Data, ActiveDeviceInfo);
+        var result = _writer.Transfer(frame, 0, frame.Length, 3000, out var written);
+        if (result != ErrorCode.None || written != frame.Length)
+            throw new IOException($"HID 帧传输失败: {result}, {written}/{frame.Length} 字节");
     }
 
     /// <summary>

@@ -61,10 +61,19 @@ ModernTRCC.WPF/
 └── ModernTRCC.sln                # 解决方案
 ```
 
+## 设备连接调试
+
+- `0416:5302` 屏幕可通过 Windows 原生 HID 通信，保留系统 HID 驱动，无需替换成 WinUSB。设备信息页的 Windows 枚举结果仅说明设备存在；仪表盘在握手成功后才显示“已连接”。
+- 型号码 PM `58` 使用 `240×320` 原生像素栅格、RGB565 小端编码。屏幕安装方向不同时，在“显示”页设置旋转；测试图案与图片使用相同的旋转流程。
+- 本仓库的构建入口是 `ModernTRCC.sln`，实际应用代码位于 `src/ModernTRCC.App`。根目录另有未接入解决方案的应用代码。
+- 构建：`dotnet build ModernTRCC.sln -c Release`。
+- 协议与矩形屏旋转回归检查：`dotnet run --project tests/ModernTRCC.Core.Tests -c Release`；本机连接了 `0416:5302` 时，加 `-- --enumerate` 验证原生 HID 枚举。
+- 传输 API 参考：[Microsoft HID 报告发送文档](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/sending-hid-reports)。PM 58 线协议参考：[实机协议记录](https://github.com/Lexonight1/thermalright-trcc-linux/issues/228)。
+
 ## 数据目录
 
 - **设置文件**: `%APPDATA%\ModernTRCC\settings.json`
-- **媒体库**: `%APPDATA%\ModernTRCC\Media\`
+- **媒体库**: 程序目录下的 `media\`；缩略图位于 `thumbnails\`。
 
 ##  支持的设备
 

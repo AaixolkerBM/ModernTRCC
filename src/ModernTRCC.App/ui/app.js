@@ -405,6 +405,9 @@ if (window.chrome && window.chrome.webview) {
 
 function handleMessage(msg) {
     switch (msg.action) {
+        case 'scanState':
+            setScanState(msg.data.scanning);
+            break;
         case 'deviceStatus':
             updateDeviceStatus(msg.data);
             break;
@@ -465,16 +468,24 @@ function updateDeviceStatus(data) {
 }
 
 function updateScanResult(data) {
-    document.getElementById('statDevices').textContent = data.count || 0;
-    if (data.count > 0) {
+    setScanState(false);
+    if (data.connected) {
         showToast(tText('toast.scanFound', { count: data.count }), 'success');
     } else {
-        showToast(tText('toast.scanNone'), 'warning');
+        showToast(data.error || tText('toast.scanNone'), 'warning');
     }
+}
+
+function setScanState(scanning) {
+    const button = document.getElementById('scanDevicesBtn');
+    if (!button) return;
+    button.disabled = !!scanning;
+    button.querySelector('span').textContent = tText(scanning ? 'toast.scanning' : 'btn.scan');
 }
 
 // ==================== 仪表盘操作 ====================
 function scanDevices() {
+    setScanState(true);
     showToast(tText('toast.scanning'));
     postToCSharp('scanDevices');
 }

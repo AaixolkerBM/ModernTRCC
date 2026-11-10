@@ -39,9 +39,11 @@ public partial class MainWindow : Window
     private bool _currentlyPlaying;
     private int _currentPlayFps;
     private string? _currentMediaId;
+    private string? _currentTestPattern;
     private bool _autoPlayTriggered;
     private readonly bool _startMinimized;
     private bool _webViewSuspended;
+    private int _scanInProgress;
 
     // 启动画面：首次导航完成后触发（由 App 订阅，用于关闭启动画面并淡入主窗口）
     public event Action? Ready;
@@ -490,7 +492,7 @@ public partial class MainWindow : Window
 
         PushAllState();
 
-        Task.Run(() => HandleScanDevices());
+        HandleScanDevices();
 
         // 自启动带 --minimized 时，等设备扫描/自动播放启动后再隐藏到托盘，
         // 保证 WebView 已初始化、后台播放不受影响
@@ -518,7 +520,22 @@ public partial class MainWindow : Window
         SendPlaybackStatus(_currentlyPlaying, _currentPlayFps);
     }
 
-    private void HandleScanDevices()
+    private async void HandleScanDevices()
+    {
+        if (Interlocked.Exchange(ref _scanInProgress, 1) != 0) return;
+        try
+        {
+            SendToJs("scanState", new { scanning = true });
+            await Task.Run(ScanAndConnectDevices);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _scanInProgress, 0);
+            SendToJs("scanState", new { scanning = false });
+        }
+    }
+
+    private void ScanAndConnectDevices()
     {
         try
         {
@@ -534,7 +551,7 @@ public partial class MainWindow : Window
 
             _log.Info("开始扫描 USB 设备...");
             int count = _lcd.ScanDevices();
-            _log.Info($"LibUSB 扫描到 {count} 个已知设备");
+            _log.Info($"USB/HID 扫描到 {count} 个可连接设备");
 
             if (count > 0)
             {
@@ -576,7 +593,7 @@ public partial class MainWindow : Window
                         _log.Error($"连接失败 - {reason}");
                         SendToast($"连接失败：{reason}", "error");
                     }
-                    SendToJs("scanResult", new { count, connected = false });
+                    SendToJs("scanResult", new { count, connected = false, error = reason });
                     SendDeviceStatus();
                 }
             }
@@ -588,7 +605,9 @@ public partial class MainWindow : Window
                 foreach (var d in wmiDevices)
                     _log.Info($"  VID:0x{d.Vid:X4} PID:0x{d.Pid:X4} {d.Name}");
 
-                SendToJs("scanResult", new { count = 0 });
+                bool detected = wmiDevices.Any(d => d.Vid == 0x0416 && d.Pid == 0x5302);
+                string error = detected ? "Windows 已检测到屏幕，但无法访问显示接口。请查看设备信息页的实时日志。" : "未找到可连接的屏幕，请检查 USB 连接。";
+                SendToJs("scanResult", new { count = 0, connected = false, error });
                 SendDeviceStatus();
             }
 
@@ -597,6 +616,8 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             _log.Error($"扫描失败: {ex.Message}");
+            SendToJs("scanResult", new { count = 0, connected = false, error = ex.Message });
+            SendDeviceStatus();
         }
     }
 
@@ -671,18 +692,26 @@ public partial class MainWindow : Window
 
         int w = _lcd.ActiveDeviceInfo.Width;
         int h = _lcd.ActiveDeviceInfo.Height;
+        _playbackCts?.Cancel();
+        _currentMediaId = null;
+        _currentTestPattern = pattern;
+        var display = _settings.Settings.Display;
+        int rotation = display.Rotation;
+        bool quarterTurn = rotation is 90 or 270;
         _log.Info($"目标分辨率: {w}x{h}");
 
         Task.Run(() =>
         {
             try
             {
-                using var bmp = GenerateTestPattern(w, h, pattern);
+                using var bmp = GenerateTestPattern(quarterTurn ? h : w, quarterTurn ? w : h, pattern);
                 _log.Info($"图案已生成: {bmp.Width}x{bmp.Height}");
 
                 // 转为 RGB888 (原版 TRCC 协议使用 RGB888)
-                var rgb888 = LcdController.ArgbToRgb888(
-                    BitmapToArgb(bmp), w, h);
+                using var rendered = _prerender.PrerenderBitmap(
+                    bmp, display.Brightness, display.Contrast, display.Saturation, rotation, "fill")
+                    ?? throw new IOException("测试图案渲染失败");
+                var rgb888 = rendered.Data;
                 _log.Info($"RGB888 帧已渲染: {rgb888.Length} 字节 (应为 {w*h*3})");
 
                 bool sent = _lcd.SendFrameRgb888(rgb888);
@@ -721,6 +750,7 @@ public partial class MainWindow : Window
 
     private void HandleClearDisplay()
     {
+        _currentTestPattern = null;
         // 停止正在播放的视频
         _playbackCts?.Cancel();
         _playbackCts?.Dispose();
@@ -773,6 +803,7 @@ public partial class MainWindow : Window
 
     private void HandlePlayMedia(string id)
     {
+        _currentTestPattern = null;
         var media = _mediaLib.MediaItems.FirstOrDefault(m => m.Id == id);
         if (media == null)
         {
@@ -1025,6 +1056,10 @@ public partial class MainWindow : Window
             {
                 Dispatcher.BeginInvoke(() => HandlePlayMedia(_currentMediaId!));
             }
+            else if (_currentTestPattern != null && _lcd.IsConnected)
+            {
+                HandleTestPattern(_currentTestPattern);
+            }
         }
         catch (Exception ex)
         {
@@ -1240,7 +1275,7 @@ public partial class MainWindow : Window
     private void SendDeviceStatus()
     {
         var dev = _lcd.ActiveDeviceInfo;
-        if (dev != null)
+        if (_lcd.IsConnected && dev != null)
         {
             SendToJs("deviceStatus", new
             {
