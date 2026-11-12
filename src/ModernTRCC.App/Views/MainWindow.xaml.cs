@@ -1,9 +1,7 @@
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
-using ImagingPixelFormat = System.Drawing.Imaging.PixelFormat;
-using DrawingColor = System.Drawing.Color;
-using DrawingPen = System.Drawing.Pen;
+
 using System.IO;
 using System.Management;
 using System.Runtime.InteropServices;
@@ -26,22 +24,18 @@ namespace ModernTRCC.App.Views;
 
 public partial class MainWindow : Window
 {
-    private readonly LcdController _lcd;
-    private readonly FramePrerenderService _prerender;
+    private readonly ScreenManager _screens;
     private readonly MediaLibraryService _mediaLib;
     private readonly SettingsService _settings;
     private readonly FFmpegService _ffmpeg;
     private readonly LogService _log;
     private System.Windows.Forms.NotifyIcon? _trayIcon;
     private bool _trayEnabled = true;
-    private CancellationTokenSource? _playbackCts;
-    private Task? _playbackTask;
-    private bool _currentlyPlaying;
-    private int _currentPlayFps;
-    private string? _currentMediaId;
-    private bool _autoPlayTriggered;
     private readonly bool _startMinimized;
+    private readonly HashSet<LcdScreenSession> _wiredSessions = new();
+    private bool _hideToTrayScheduled;
     private bool _webViewSuspended;
+    private int _scanInProgress;
 
     // 启动画面：首次导航完成后触发（由 App 订阅，用于关闭启动画面并淡入主窗口）
     public event Action? Ready;
@@ -56,8 +50,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        _lcd = App.Services.GetRequiredService<LcdController>();
-        _prerender = App.Services.GetRequiredService<FramePrerenderService>();
+        _screens = App.Services.GetRequiredService<ScreenManager>();
         _mediaLib = App.Services.GetRequiredService<MediaLibraryService>();
         _settings = App.Services.GetRequiredService<SettingsService>();
         _ffmpeg = App.Services.GetRequiredService<FFmpegService>();
@@ -81,27 +74,42 @@ public partial class MainWindow : Window
         Activated += MainWindow_Activated;
         Deactivated += (s, e) => _wasDeactivated = true;
 
-        // 媒体库变化（启动扫描完成/增删）时刷新 UI；同时尝试开机自动播放
+        // 媒体库变化（启动扫描完成/增删）时刷新 UI；同时各屏幕尝试开机自动播放
         _mediaLib.MediaLibraryChanged += (s, e) =>
         {
             try
             {
                 SendMediaList();
-                TryStartAutoPlay();
+                foreach (var session in _screens.Screens)
+                    session.TryStartAutoPlay(_mediaLib);
             }
             catch { }
         };
 
         // 日志事件
         _log.OnLog += OnLogReceived;
-        _lcd.ErrorOccurred += (s, msg) => _log.Error($"USB: {msg}");
-        _lcd.DeviceConnected += (s, dev) => _log.Success($"设备已连接: {dev.Name} {dev.Width}x{dev.Height}");
+
+        // 屏幕列表变化：绑定各会话事件并推送全部屏幕状态
+        _screens.ScreensChanged += (s, e) => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            foreach (var session in _screens.Screens)
+                WireSession(session);
+            SendScreensList();
+            foreach (var session in _screens.Screens)
+            {
+                SendDeviceStatus(session);
+                SendPlaybackStatus(session);
+            }
+        }));
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         InitializeTray();
         await InitializeWebView();
+
+        // 监听“显示主窗口”信号：第二个实例启动时通知本实例从托盘恢复窗口
+        ListenForShowWindowSignal();
 
         // 周期性检查 WebView2 子窗口子类化是否仍有效（缩放/导航后可能被重建）
         var subclassTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -123,6 +131,28 @@ public partial class MainWindow : Window
             }
         };
         readyTimer.Start();
+    }
+
+    /// <summary>
+    /// 后台线程监听单实例“显示主窗口”信号。
+    /// 自启动（注册表 Run + 计划任务）可能重复拉起进程，第二个实例通过
+    /// 命名事件请求本实例显示窗口后自行退出，避免多个实例竞争 USB 设备。
+    /// </summary>
+    private void ListenForShowWindowSignal()
+    {
+        var evt = App.ShowWindowEvent;
+        if (evt == null) return;
+        Task.Run(() =>
+        {
+            try
+            {
+                while (evt.WaitOne())
+                {
+                    Dispatcher.Invoke(ShowWindow);
+                }
+            }
+            catch { }
+        });
     }
 
     // ==================== 窗口外观 / 消息处理 ====================
@@ -360,7 +390,34 @@ public partial class MainWindow : Window
 
     private async Task InitializeWebView()
     {
-        await WebView.EnsureCoreWebView2Async(null);
+        // 用户数据目录固定到用户可写位置：默认目录在 exe 同级（安装到 Program Files 时
+        // 非提权进程无法写入），初始化会以 0x800700AA“请求的资源在使用中”失败。
+        var userDataFolder = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "ModernTRCC", "WebView2");
+        Directory.CreateDirectory(userDataFolder);
+
+        // 若残留浏览器进程仍短暂占用该目录，做有限重试
+        CoreWebView2Environment? environment = null;
+        Exception? lastError = null;
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                environment = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
+                await WebView.EnsureCoreWebView2Async(environment);
+                lastError = null;
+                break;
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+                environment = null;
+                await Task.Delay(1000);
+            }
+        }
+        if (lastError != null)
+            throw lastError;
 
         var uiPath = Path.Combine(AppContext.BaseDirectory, "ui");
         if (!Directory.Exists(uiPath))
@@ -433,13 +490,45 @@ public partial class MainWindow : Window
             {
                 case "init": HandleInit(); break;
                 case "scanDevices": HandleScanDevices(); break;
-                case "sendTestPattern": HandleTestPattern(data.GetProperty("pattern").GetString()!); break;
-                case "clearDisplay": HandleClearDisplay(); break;
+                case "getScreens": SendScreensList(); break;
+                case "sendTestPattern":
+                {
+                    var s = GetScreen(data);
+                    if (s != null) s.SendTestPattern(data.GetProperty("pattern").GetString()!);
+                    break;
+                }
+                case "clearDisplay":
+                {
+                    var s = GetScreen(data);
+                    if (s != null) s.ClearDisplay();
+                    break;
+                }
                 case "uploadMedia": HandleUploadMedia(data.GetProperty("type").GetString()!); break;
-                case "playMedia": HandlePlayMedia(data.GetProperty("id").GetString()!); break;
+                case "playMedia":
+                {
+                    var s = GetScreen(data);
+                    if (s != null) s.PlayMedia(data.GetProperty("id").GetString()!, _mediaLib);
+                    break;
+                }
                 case "deleteMedia": HandleDeleteMedia(data.GetProperty("id").GetString()!); break;
                 case "getMediaList": SendMediaList(); break;
-                case "getSettings": SendSettings(); break;
+                case "getSettings":
+                {
+                    SendSettings(GetScreenSettings(data));
+                    break;
+                }
+                case "getPlaybackStatus":
+                {
+                    var s = GetScreen(data);
+                    if (s != null) SendPlaybackStatus(s);
+                    break;
+                }
+                case "getDeviceStatus":
+                {
+                    var s = GetScreen(data);
+                    if (s != null) SendDeviceStatus(s);
+                    break;
+                }
                 case "applySettings": HandleApplySettings(data); break;
                 case "getAutoStartStatus": SendAutoStartStatus(); break;
                 case "enableAutoStart":
@@ -490,12 +579,15 @@ public partial class MainWindow : Window
 
         PushAllState();
 
-        Task.Run(() => HandleScanDevices());
+        HandleScanDevices();
 
         // 自启动带 --minimized 时，等设备扫描/自动播放启动后再隐藏到托盘，
-        // 保证 WebView 已初始化、后台播放不受影响
-        if (_startMinimized)
+        // 保证 WebView 已初始化、后台播放不受影响。
+        // 注意：WebView 重载（如从托盘恢复时 RestoreWebViewAsync 触发 Reload）会再次
+        // 触发 HandleInit，必须用一次性标志防止窗口显示后又被自动隐藏。
+        if (_startMinimized && !_hideToTrayScheduled)
         {
+            _hideToTrayScheduled = true;
             Dispatcher.BeginInvoke(async () =>
             {
                 await Task.Delay(3000);
@@ -510,94 +602,158 @@ public partial class MainWindow : Window
     /// </summary>
     private void PushAllState()
     {
-        SendSettings();
         SendAutoStartStatus();
         SendMediaList();
         SendAllLogs();
-        SendDeviceStatus();
-        SendPlaybackStatus(_currentlyPlaying, _currentPlayFps);
+        SendScreensList();
+        var first = _screens.Screens.FirstOrDefault();
+        SendSettings(first?.Settings);
+        foreach (var session in _screens.Screens)
+        {
+            SendDeviceStatus(session);
+            SendPlaybackStatus(session);
+        }
     }
 
-    private void HandleScanDevices()
+    private async void HandleScanDevices()
     {
+        // 并发保护：自动扫描与手动扫描同时触发时只执行一次
+        if (Interlocked.Exchange(ref _scanInProgress, 1) != 0) return;
         try
         {
-            // 设备已经连接时直接返回状态，避免重复打开设备触发“被占用”错误
-            if (_lcd.IsConnected)
+            SendToJs("scanState", new { scanning = true });
+
+            await Task.Run(() =>
             {
-                _log.Info("设备已连接，跳过重复扫描");
-                SendToJs("scanResult", new { count = _lcd.Devices.Count, connected = true });
-                SendDeviceStatus();
-                SendDiagnostics();
-                return;
-            }
+                _screens.ScanAndConnectAll(_mediaLib);
 
-            _log.Info("开始扫描 USB 设备...");
-            int count = _lcd.ScanDevices();
-            _log.Info($"LibUSB 扫描到 {count} 个已知设备");
-
-            if (count > 0)
-            {
-                var dev = _lcd.Devices[0];
-                _log.Info($"尝试连接: {dev.Name} (VID:0x{dev.Vid:X4} PID:0x{dev.Pid:X4})");
-
-                // 重试连接：设备可能被短暂占用（如刚插拔/其他程序正在枚举），
-                // 多次尝试可提高成功率；若被原版 TRCC 软件长期占用则最终仍失败并提示
-                bool connected = false;
-                for (int attempt = 1; attempt <= 3 && !connected; attempt++)
+                // 若有设备连接失败，检测是否有原版 TRCC/USBLCD 软件占用，给出明确提示并支持一键关闭重连
+                var failed = _screens.Screens.Where(s => !s.Controller.IsConnected).ToList();
+                string? error = null;
+                if (failed.Count > 0)
                 {
-                    if (attempt > 1)
-                    {
-                        _log.Info($"连接失败，{attempt}/3 重试中...");
-                        Thread.Sleep(400);
-                    }
-                    connected = _lcd.Connect(dev);
-                }
-
-                if (connected)
-                {
-                    _log.Success($"连接成功! 分辨率: {dev.Width}x{dev.Height}");
-                    SendToJs("scanResult", new { count, connected = true });
-                    SendDeviceStatus();
-                    TryStartAutoPlay();
-                }
-                else
-                {
-                    // 检测是否有原版 TRCC/USBLCD 软件占用设备，给出明确提示并支持一键关闭重连
                     var conflicts = GetConflictingTrccProcesses();
-                    string reason = string.IsNullOrEmpty(_lcd.LastError) ? "未知原因" : _lcd.LastError;
                     if (conflicts.Count > 0)
                     {
-                        _log.Error($"连接失败 - 设备被其他程序占用: {string.Join(", ", conflicts)}");
-                        SendToast($"设备被 {string.Join("、", conflicts)} 占用，请先关闭这些程序再重试", "error", "closeConflicts");
+                        string names = string.Join("、", conflicts);
+                        error = $"设备被 {names} 占用，请先关闭这些程序再重试";
+                        Dispatcher.Invoke(() => SendToast(error, "error", "closeConflicts"));
                     }
                     else
                     {
-                        _log.Error($"连接失败 - {reason}");
-                        SendToast($"连接失败：{reason}", "error");
+                        error = string.Join("; ", failed.Select(s => $"{s.DisplayName}: {s.Controller.LastError}"));
+                        Dispatcher.Invoke(() => SendToast($"连接失败：{error}", "error"));
                     }
-                    SendToJs("scanResult", new { count, connected = false });
-                    SendDeviceStatus();
                 }
-            }
-            else
-            {
-                _log.Warn("未找到已知设备，扫描所有 USB 设备...");
-                var wmiDevices = ScanWmiUsbDevices();
-                _log.Info($"WMI 检测到 {wmiDevices.Count} 个 USB 设备:");
-                foreach (var d in wmiDevices)
-                    _log.Info($"  VID:0x{d.Vid:X4} PID:0x{d.Pid:X4} {d.Name}");
 
-                SendToJs("scanResult", new { count = 0 });
-                SendDeviceStatus();
-            }
-
-            SendDiagnostics();
+                int count = _screens.Screens.Count;
+                bool connected = _screens.Screens.Any(s => s.Controller.IsConnected);
+                SendToJs("scanResult", new { count, connected, error });
+                SendDiagnostics();
+            });
         }
         catch (Exception ex)
         {
             _log.Error($"扫描失败: {ex.Message}");
+            SendToJs("scanResult", new { count = _screens.Screens.Count, connected = false, error = ex.Message });
         }
+        finally
+        {
+            Interlocked.Exchange(ref _scanInProgress, 0);
+            SendToJs("scanState", new { scanning = false });
+        }
+    }
+
+    /// <summary>绑定单屏会话的事件（幂等），把设备错误/连接成功/播放状态/toast 推到前端</summary>
+    private void WireSession(LcdScreenSession session)
+    {
+        if (!_wiredSessions.Add(session)) return;
+
+        session.Controller.ErrorOccurred += (s, msg) =>
+            _log.Error($"[屏幕 {session.Index + 1}] USB: {msg}");
+        session.Controller.DeviceConnected += (s, dev) =>
+            _log.Success($"[屏幕 {session.Index + 1}] 设备已连接: {dev.Name} {dev.Width}x{dev.Height}");
+        session.StateChanged += (s, e) =>
+        {
+            try { Dispatcher.Invoke(() => SendPlaybackStatus(session)); } catch { }
+        };
+        session.Notice += (s, n) =>
+        {
+            try
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    switch (n.Type)
+                    {
+                        case PlaybackNoticeType.Started:
+                            SendToastKey("toast.playing", new { name = n.Detail ?? "" }, "info");
+                            break;
+                        case PlaybackNoticeType.Completed:
+                            SendToastKey("toast.playDone", null, "info");
+                            break;
+                        case PlaybackNoticeType.Failed:
+                            SendToastKey("toast.playFail", null, "error");
+                            break;
+                        case PlaybackNoticeType.SendFailed:
+                            SendToastKey("toast.sendFailed", null, "error");
+                            break;
+                        case PlaybackNoticeType.PatternSent:
+                            SendToastKey("toast.patternSent", null, "success");
+                            break;
+                        case PlaybackNoticeType.DeviceNotConnected:
+                            SendToastKey("toast.deviceNotConnected", null, "warning");
+                            break;
+                    }
+                });
+            }
+            catch { }
+        };
+    }
+
+    /// <summary>从 JS 消息中解析屏幕索引并取会话（缺省为第一个屏幕）</summary>
+    private LcdScreenSession? GetScreen(JsonElement data)
+    {
+        int idx = data.TryGetProperty("screen", out var sp) ? sp.GetInt32() : 0;
+        return _screens.GetByIndex(idx);
+    }
+
+    /// <summary>从 JS 消息中解析屏幕索引并取该屏设置（未连接时回退到已保存的设置项）</summary>
+    private ScreenSettings GetScreenSettings(JsonElement data)
+    {
+        int idx = data.TryGetProperty("screen", out var sp) ? sp.GetInt32() : 0;
+        var session = _screens.GetByIndex(idx);
+        if (session != null) return session.Settings;
+        return _settings.Settings.Screens.FirstOrDefault(s => s.Index == idx)
+               ?? _settings.Settings.Screens.FirstOrDefault()
+               ?? new ScreenSettings();
+    }
+
+    /// <summary>推送屏幕列表（前端据此显示/隐藏屏幕切换条并更新已连接统计）</summary>
+    private void SendScreensList()
+    {
+        var list = _screens.Screens.Select(session =>
+        {
+            var dev = session.Controller.ActiveDeviceInfo;
+            return new
+            {
+                index = session.Index,
+                name = session.DisplayName,
+                connected = dev != null,
+                resolution = dev != null ? $"{dev.Width}x{dev.Height}" : "",
+                playing = session.CurrentlyPlaying,
+            };
+        }).ToList();
+        SendToJs("screensList", new
+        {
+            screens = list,
+            connectedCount = _screens.ConnectedCount
+        });
+    }
+
+    private void TryStartAutoPlayFor(int screenIndex)
+    {
+        var session = _screens.GetByIndex(screenIndex);
+        session?.TryStartAutoPlay(_mediaLib);
     }
 
     /// <summary>
@@ -658,85 +814,6 @@ public partial class MainWindow : Window
         });
     }
 
-    private void HandleTestPattern(string pattern)
-    {
-        _log.Info($"发送测试图案: {pattern}");
-
-        if (_lcd.ActiveDeviceInfo == null)
-        {
-            _log.Error("设备未连接，无法发送测试图案");
-            SendToastKey("toast.deviceNotConnected", null, "warning");
-            return;
-        }
-
-        int w = _lcd.ActiveDeviceInfo.Width;
-        int h = _lcd.ActiveDeviceInfo.Height;
-        _log.Info($"目标分辨率: {w}x{h}");
-
-        Task.Run(() =>
-        {
-            try
-            {
-                using var bmp = GenerateTestPattern(w, h, pattern);
-                _log.Info($"图案已生成: {bmp.Width}x{bmp.Height}");
-
-                // 转为 RGB888 (原版 TRCC 协议使用 RGB888)
-                var rgb888 = LcdController.ArgbToRgb888(
-                    BitmapToArgb(bmp), w, h);
-                _log.Info($"RGB888 帧已渲染: {rgb888.Length} 字节 (应为 {w*h*3})");
-
-                bool sent = _lcd.SendFrameRgb888(rgb888);
-                _log.Info($"SendFrameRgb888 返回: {sent}");
-
-                if (sent)
-                {
-                    _log.Success("测试图案已发送!");
-                    SendToastKey("toast.patternSent", null, "success");
-                }
-                else
-                {
-                    _log.Error("发送失败 - 设备未运行或队列已满");
-                    SendToastKey("toast.sendFailed", null, "error");
-                }
-            }
-            catch (Exception ex)
-            {
-                _log.Error($"测试图案异常: {ex.Message}");
-                SendToast($"发送失败: {ex.Message}", "error");
-            }
-        });
-    }
-
-    private static byte[] BitmapToArgb(Bitmap bmp)
-    {
-        var rect = new Rectangle(0, 0, bmp.Width, bmp.Height);
-        var bmpData = bmp.LockBits(rect, ImageLockMode.ReadOnly,
-            ImagingPixelFormat.Format32bppArgb);
-        int byteCount = bmpData.Stride * bmpData.Height;
-        byte[] argb = new byte[byteCount];
-        System.Runtime.InteropServices.Marshal.Copy(bmpData.Scan0, argb, 0, byteCount);
-        bmp.UnlockBits(bmpData);
-        return argb;
-    }
-
-    private void HandleClearDisplay()
-    {
-        // 停止正在播放的视频
-        _playbackCts?.Cancel();
-        _playbackCts?.Dispose();
-        _playbackCts = null;
-        _currentMediaId = null;
-        _lcd.ClearFrameQueue(); // 清空残留的视频帧，让黑色帧立即生效
-        SendPlaybackStatus(false, 0);
-
-        if (_lcd.ActiveDeviceInfo == null) return;
-        int w = _lcd.ActiveDeviceInfo.Width;
-        int h = _lcd.ActiveDeviceInfo.Height;
-        // RGB888 = 3 bytes per pixel
-        var rgb888 = new byte[w * h * 3];
-        _lcd.SendFrameRgb888(rgb888);
-        _log.Info("屏幕已清除，播放已停止");
-    }
 
     private void HandleUploadMedia(string type)
     {
@@ -771,115 +848,6 @@ public partial class MainWindow : Window
         });
     }
 
-    private void HandlePlayMedia(string id)
-    {
-        var media = _mediaLib.MediaItems.FirstOrDefault(m => m.Id == id);
-        if (media == null)
-        {
-            _log.Error($"媒体不存在: {id}");
-            return;
-        }
-        if (_lcd.ActiveDeviceInfo == null)
-        {
-            _log.Error("设备未连接");
-            SendToastKey("toast.deviceNotConnected", null, "warning");
-            return;
-        }
-
-        // 停止上一轮播放，确保同一时间只有一个播放循环（否则会越来越快）
-        _playbackCts?.Cancel();
-        _playbackCts?.Dispose();
-        var cts = new CancellationTokenSource();
-        _playbackCts = cts;
-        var token = cts.Token;
-        _currentMediaId = id;
-
-        int playFps = _settings.Settings.Playback.VideoFps;
-
-        _log.Info($"播放: {media.Name}");
-        SendToastKey("toast.playing", new { name = media.Name }, "info");
-        SendPlaybackStatus(true, playFps);
-
-        _playbackTask = Task.Run(async () =>
-        {
-            try
-            {
-                if (media.Type == MediaType.Image)
-                {
-                    // 图片播放：按屏幕分辨率缩放/裁剪/旋转并应用图像调整，再发送
-                    _lcd.ClearFrameQueue(); // 清空上一轮残留视频帧，避免发送失败
-
-                    var frame = _prerender.PrerenderImage(
-                        media.FilePath,
-                        _settings.Settings.Display.Brightness,
-                        _settings.Settings.Display.Contrast,
-                        _settings.Settings.Display.Saturation,
-                        _settings.Settings.Display.Rotation,
-                        _settings.Settings.Playback.FitMode);
-
-                    if (frame != null && !token.IsCancellationRequested)
-                    {
-                        // 静态帧：发送成功后持续显示，保持播放状态
-                        if (_lcd.SendFrameRgb888(frame.Data))
-                        {
-                            _log.Success($"图片已显示: {media.Name}");
-                            SendPlaybackStatus(true, playFps);
-                        }
-                        else
-                        {
-                            _log.Error("图片发送失败（队列繁忙）");
-                            SendToastKey("toast.sendFailed", null, "error");
-                            SendPlaybackStatus(false, 0);
-                        }
-                    }
-                    else
-                    {
-                        _log.Error("图片渲染失败");
-                        SendToastKey("toast.playFail", null, "error");
-                        SendPlaybackStatus(false, 0);
-                    }
-                }
-                else
-                {
-                    // 视频统一走优化后的流式播放：ffmpeg 边解码边发送，不缓存帧
-                    _log.Info("直接流式播放视频...");
-                    bool ok = await _prerender.StreamVideoAsync(
-                        media.FilePath, playFps,
-                        _settings.Settings.Display.Brightness,
-                        _settings.Settings.Display.Contrast,
-                        _settings.Settings.Display.Saturation,
-                        _settings.Settings.Display.Rotation,
-                        _settings.Settings.Playback.FitMode,
-                        _settings.Settings.Playback.LoopVideo,
-                        token);
-
-                    if (token.IsCancellationRequested) return;
-
-                    if (ok)
-                    {
-                        _log.Info("视频播放完成");
-                        SendToastKey("toast.playDone", null, "info");
-                    }
-                    else
-                    {
-                        _log.Error("视频播放失败");
-                        SendToastKey("toast.playFail", null, "error");
-                    }
-                    SendPlaybackStatus(false, 0);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // 被清除屏幕或新播放取消
-            }
-            catch (Exception ex)
-            {
-                _log.Error($"播放失败: {ex.Message}");
-                SendToast($"播放失败: {ex.Message}", "error");
-                SendPlaybackStatus(false, 0);
-            }
-        });
-    }
 
     private void HandleDeleteMedia(string id)
     {
@@ -892,19 +860,9 @@ public partial class MainWindow : Window
 
         try
         {
-            // 若正在播放/显示该媒体，先停止并清空屏幕
-            if (_currentMediaId == id)
-            {
-                _playbackCts?.Cancel();
-                _playbackCts?.Dispose();
-                _playbackCts = null;
-                _currentMediaId = null;
-                _lcd.ClearFrameQueue();
-                SendPlaybackStatus(false, 0);
-            }
-
-            // 释放该文件的预渲染缓存（文件删除后缓存无法复用）
-            _prerender.RemoveCacheForFile(media.FilePath);
+            // 若正在播放/显示该媒体，先停止并清空屏幕；并释放各屏的预渲染缓存
+            foreach (var session in _screens.Screens)
+                session.OnMediaDeleted(id, media.FilePath);
 
             string name = media.Name;
             bool ok = _mediaLib.RemoveMedia(media);
@@ -926,16 +884,17 @@ public partial class MainWindow : Window
         }
     }
 
-    private void SendPlaybackStatus(bool playing, int fps)
+    private void SendPlaybackStatus(LcdScreenSession session)
     {
-        _currentlyPlaying = playing;
-        _currentPlayFps = fps;
+        bool playing = session.CurrentlyPlaying;
+        int fps = session.CurrentPlayFps;
         // 静态预览：附带当前播放媒体的缩略图与信息（视频显示缩略图+时长/帧率/大小）
         MediaItem? media = null;
-        if (!string.IsNullOrEmpty(_currentMediaId))
-            media = _mediaLib.MediaItems.FirstOrDefault(m => m.Id == _currentMediaId);
+        if (!string.IsNullOrEmpty(session.CurrentMediaId))
+            media = _mediaLib.MediaItems.FirstOrDefault(m => m.Id == session.CurrentMediaId);
         SendToJs("playbackStatus", new
         {
+            screen = session.Index,
             playing,
             fps,
             media = media == null ? null : new
@@ -965,11 +924,13 @@ public partial class MainWindow : Window
         SendToJs("mediaList", new { items });
     }
 
-    private void SendSettings()
+    private void SendSettings(ScreenSettings? s = null)
     {
-        var s = _settings.Settings;
+        s ??= _settings.Settings.Screens.FirstOrDefault() ?? new ScreenSettings();
         SendToJs("settingsLoaded", new
         {
+            screen = s.Index,
+            screenName = s.Name,
             brightness = s.Display.Brightness,
             contrast = s.Display.Contrast,
             saturation = s.Display.Saturation,
@@ -980,11 +941,11 @@ public partial class MainWindow : Window
             fitMode = s.Playback.FitMode,
             enableAutoplay = s.AutoPlay.Enabled,
             autoplayMediaId = s.AutoPlay.MediaId,
-            startMinimized = s.AutoStart.StartMinimized,
-            highPriority = s.AutoStart.HighPriority,
-            minimizeToTray = s.Ui.MinimizeToTray,
-            enableMica = s.Ui.EnableMica,
-            language = s.Ui.Language
+            startMinimized = _settings.Settings.AutoStart.StartMinimized,
+            highPriority = _settings.Settings.AutoStart.HighPriority,
+            minimizeToTray = _settings.Settings.Ui.MinimizeToTray,
+            enableMica = _settings.Settings.Ui.EnableMica,
+            language = _settings.Settings.Ui.Language
         });
     }
 
@@ -992,7 +953,15 @@ public partial class MainWindow : Window
     {
         try
         {
-            var s = _settings.Settings;
+            int idx = data.TryGetProperty("screen", out var sp) ? sp.GetInt32() : 0;
+            var session = _screens.GetByIndex(idx);
+            if (session == null)
+            {
+                _log.Warn($"屏幕 {idx + 1} 尚未连接，忽略设置");
+                return;
+            }
+
+            var s = session.Settings;
             s.Display.Brightness = data.GetProperty("brightness").GetInt32();
             s.Display.Contrast = data.GetProperty("contrast").GetInt32();
             s.Display.Saturation = data.GetProperty("saturation").GetInt32();
@@ -1004,27 +973,11 @@ public partial class MainWindow : Window
             if (data.TryGetProperty("fitMode", out var fitProp))
                 s.Playback.FitMode = fitProp.GetString() ?? "cover";
             _settings.Save();
-            _lcd.TargetFps = s.Display.TargetFps;
 
-            // 停掉旧播放循环并等待其完全退出，再清除缓存，
-            // 避免播放循环仍持有缓存引用时被释放，导致黑屏/异常
-            _playbackCts?.Cancel();
-            if (_playbackTask != null)
-            {
-                try { await _playbackTask; } catch { }
-            }
-
-            // 亮度/对比度/饱和度/旋转/缩放变化会使旧图片缓存失效，清除以便下次按新参数重渲
-            _prerender.ClearCache();
+            // 停旧播放→清本屏缓存→按新参数重渲当前媒体
+            await session.ApplyDisplaySettingsAsync(_mediaLib);
             // 回传最新设置，让滑块/开关状态与后端一致
-            SendSettings();
-            _log.Info("显示设置已应用");
-
-            // 立即按新参数重新渲染当前显示的媒体（图片/视频），避免黑屏
-            if (!string.IsNullOrEmpty(_currentMediaId) && _lcd.ActiveDeviceInfo != null)
-            {
-                Dispatcher.BeginInvoke(() => HandlePlayMedia(_currentMediaId!));
-            }
+            SendSettings(session.Settings);
         }
         catch (Exception ex)
         {
@@ -1042,17 +995,27 @@ public partial class MainWindow : Window
             s.Ui.EnableMica = micaProp.GetBoolean();
         if (data.TryGetProperty("language", out var langProp))
             s.Ui.Language = langProp.GetString() ?? "zh-CN";
-        // 开机自动播放设置（语言切换等旧调用不携带时保持原值）
+        // 开机自动播放设置（按屏幕独立保存；语言切换等旧调用不携带时保持原值）
         if (data.TryGetProperty("enableAutoplay", out var apProp))
         {
-            s.AutoPlay.Enabled = apProp.GetBoolean();
-            if (data.TryGetProperty("autoplayMedia", out var amProp))
-                s.AutoPlay.MediaId = amProp.GetString();
-            // 重新启用后允许再次触发自动播放，并在设备就绪时立即播放
-            if (s.AutoPlay.Enabled)
+            int screenIdx = data.TryGetProperty("screen", out var sp) ? sp.GetInt32() : 0;
+            // 优先用会话定位设置（会话与其 DeviceKey 绑定的设置条一一对应），
+            // 避免按 Index 匹配到历史遗留的同 Index 垃圾条目而写错设置
+            var session = _screens.GetByIndex(screenIdx);
+            var settings = session?.Settings
+                           ?? _settings.Settings.Screens.FirstOrDefault(x => x.Index == screenIdx)
+                           ?? _settings.Settings.Screens.FirstOrDefault();
+            if (settings != null)
             {
-                _autoPlayTriggered = false;
-                TryStartAutoPlay();
+                settings.AutoPlay.Enabled = apProp.GetBoolean();
+                if (data.TryGetProperty("autoplayMedia", out var amProp))
+                    settings.AutoPlay.MediaId = amProp.GetString();
+                // 重新启用后允许再次触发自动播放，并在设备就绪时立即播放
+                if (settings.AutoPlay.Enabled)
+                {
+                    (session ?? _screens.GetByIndex(settings.Index))?.ResetAutoPlay();
+                    TryStartAutoPlayFor(session?.Index ?? settings.Index);
+                }
             }
         }
         _settings.Save();
@@ -1068,32 +1031,6 @@ public partial class MainWindow : Window
         SendToJs("autoStartStatus", new { enabled });
     }
 
-    /// <summary>
-    /// 开机自动播放：设备已连接且媒体库就绪时播放配置的媒体。
-    /// 每次运行只触发一次；媒体库尚未加载完成时静默等待下一次变更事件。
-    /// </summary>
-    private void TryStartAutoPlay()
-    {
-        try
-        {
-            if (_autoPlayTriggered) return;
-            if (_lcd.ActiveDeviceInfo == null) return;
-
-            var s = _settings.Settings;
-            if (!s.AutoPlay.Enabled || string.IsNullOrEmpty(s.AutoPlay.MediaId)) return;
-
-            var media = _mediaLib.MediaItems.FirstOrDefault(m => m.Id == s.AutoPlay.MediaId);
-            if (media == null) return; // 媒体库尚未加载完成，等待后续事件
-
-            _autoPlayTriggered = true;
-            _log.Info($"开机自动播放: {media.Name}");
-            HandlePlayMedia(media.Id);
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"自动播放失败: {ex.Message}");
-        }
-    }
 
     private void SendToast(string message, string type = "info", string? action = null)
     {
@@ -1112,53 +1049,6 @@ public partial class MainWindow : Window
         SendToJs("allLogs", new { logs });
     }
 
-    // ==================== 测试图案 ====================
-    private static Bitmap GenerateTestPattern(int width, int height, string type)
-    {
-        var bmp = new Bitmap(width, height);
-        using var g = Graphics.FromImage(bmp);
-
-        switch (type)
-        {
-            case "colorbars":
-            {
-                var colors = new[] {
-                    DrawingColor.White, DrawingColor.Yellow, DrawingColor.Cyan, DrawingColor.Green,
-                    DrawingColor.Magenta, DrawingColor.Red, DrawingColor.Blue, DrawingColor.Black
-                };
-                // 精确等宽：前 n-1 个取 floor，最后一个补齐剩余像素
-                int barW = width / colors.Length;
-                int remainder = width - barW * colors.Length;
-                for (int i = 0; i < colors.Length; i++)
-                using (var brush = new SolidBrush(colors[i]))
-                {
-                    int w = (i == colors.Length - 1) ? barW + remainder : barW;
-                    g.FillRectangle(brush, i * barW, 0, w, height);
-                }
-                break;
-            }
-            case "gradient":
-            {
-                for (int y = 0; y < height; y++)
-                for (int x = 0; x < width; x++)
-                {
-                    int r = (int)(x * 255.0 / width);
-                    int gV = (int)(y * 255.0 / height);
-                    bmp.SetPixel(x, y, DrawingColor.FromArgb(r, gV, 128));
-                }
-                break;
-            }
-            case "grid":
-            {
-                g.Clear(DrawingColor.Black);
-                using var pen = new DrawingPen(DrawingColor.White);
-                for (int x = 0; x < width; x += 20) g.DrawLine(pen, x, 0, x, height);
-                for (int y = 0; y < height; y += 20) g.DrawLine(pen, 0, y, width, y);
-                break;
-            }
-        }
-        return bmp;
-    }
 
     // ==================== 诊断 ====================
     private void SendDiagnostics()
@@ -1237,13 +1127,14 @@ public partial class MainWindow : Window
         return list;
     }
 
-    private void SendDeviceStatus()
+    private void SendDeviceStatus(LcdScreenSession session)
     {
-        var dev = _lcd.ActiveDeviceInfo;
-        if (dev != null)
+        var dev = session.Controller.ActiveDeviceInfo;
+        if (session.Controller.IsConnected && dev != null)
         {
             SendToJs("deviceStatus", new
             {
+                screen = session.Index,
                 connected = true,
                 deviceName = dev.Name,
                 resolution = $"{dev.Width}x{dev.Height}"
@@ -1251,7 +1142,7 @@ public partial class MainWindow : Window
         }
         else
         {
-            SendToJs("deviceStatus", new { connected = false, deviceName = "", resolution = "" });
+            SendToJs("deviceStatus", new { screen = session.Index, connected = false, deviceName = "", resolution = "" });
         }
     }
 
@@ -1282,15 +1173,38 @@ public partial class MainWindow : Window
     {
         Dispatcher.Invoke(async () =>
         {
+            // 最小化启动时窗口位于屏幕外，从托盘恢复前先移回屏幕中央
+            if (Left < -100 || Top < -100 ||
+                Left > SystemParameters.VirtualScreenWidth || Top > SystemParameters.VirtualScreenHeight)
+            {
+                CenterWindow();
+            }
+
             Show();
             Activate();
             WindowState = WindowState.Normal;
+            ShowInTaskbar = true;
 
             // 恢复 WebView（挂起时先 Resume，再重新加载并推送全部状态）
             ResumeWebView();
             await RestoreWebViewAsync();
             PushAllState();
         });
+    }
+
+    private void CenterWindow()
+    {
+        try
+        {
+            double sx = SystemParameters.PrimaryScreenWidth;
+            double sy = SystemParameters.PrimaryScreenHeight;
+            Left = (sx - Width) / 2;
+            Top = (sy - Height) / 2;
+        }
+        catch
+        {
+            WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        }
     }
 
     // 从 Resources 目录加载应用图标（TRCC.ico），失败时回退到系统图标

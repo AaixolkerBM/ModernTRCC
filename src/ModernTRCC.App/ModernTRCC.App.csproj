@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>ModernTRCC.App</RootNamespace>
     <AssemblyName>ModernTRCC</AssemblyName>
-    <Version>1.0.1</Version>
+    <Version>1.1.2</Version>
     <Description>Modern TRCC - Water Cooling Screen Controller</Description>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>

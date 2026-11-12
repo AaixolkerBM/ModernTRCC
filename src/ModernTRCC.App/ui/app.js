@@ -8,7 +8,7 @@ const I18N = {
         'page.display.title': '显示', 'page.display.sub': '调整屏幕显示效果和性能参数',
         'page.system.title': '设置', 'page.system.sub': '配置应用启动、外观和系统选项',
         'page.diagnostics.title': '设备信息', 'page.diagnostics.sub': '查看所有USB设备信息，帮助识别水冷屏幕',
-        'status.connected': '已连接', 'status.disconnected': '未连接',
+        'status.connected': '已连接', 'status.disconnected': '未连接', 'screen.name': '屏幕 {n}',
         'btn.scan': '扫描设备', 'btn.uploadImage': '上传图片', 'btn.uploadVideo': '上传视频',
         'btn.clear': '清除屏幕', 'btn.clearLogs': '清除',
         'btn.save': '保存设置', 'btn.apply': '应用设置', 'btn.reset': '重置',
@@ -40,11 +40,10 @@ const I18N = {
         'sys.autoplayMedia': '播放媒体', 'sys.autoplay.none': '（未选择媒体）',
         'sys.appearance': '外观设置',
         'sys.minimizeToTray': '最小化到系统托盘', 'sys.minimizeToTray.desc': '关闭窗口时最小化到托盘，继续后台运行',
-        'sys.language': '语言', 'sys.about': '关于', 'sys.version': '版本 1.0.1',
+        'sys.language': '语言', 'sys.about': '关于', 'sys.version': '版本 1.1.2',
         'sys.author': '作者', 'sys.protocol': '协议', 'sys.aboutCopy': '支持利民 Thermalright 全系列水冷屏幕',
         'diag.refresh': '刷新设备列表', 'diag.known': '已知设备列表', 'diag.allUsb': '所有USB设备',
         'diag.sidebar.devices': '设备列表',
-        'diag.allUsb.desc': '找到你的水冷屏幕的 VID/PID 告诉我',
         'diag.clickRefresh': '点击「刷新设备列表」扫描', 'diag.logs': '实时日志',
         'diag.waitingLogs': '等待日志...', 'diag.noKnown': '无已知设备', 'diag.noUsb': '未检测到任何USB设备',
         'diag.found': '已检测到', 'diag.notFound': '未检测到', 'diag.matched': '匹配已知设备',
@@ -73,7 +72,7 @@ const I18N = {
         'page.display.title': '顯示', 'page.display.sub': '調整螢幕顯示效果與效能參數',
         'page.system.title': '設定', 'page.system.sub': '設定應用程式啟動、外觀與系統選項',
         'page.diagnostics.title': '裝置資訊', 'page.diagnostics.sub': '查看所有USB裝置資訊，協助識別水冷螢幕',
-        'status.connected': '已連線', 'status.disconnected': '未連線',
+        'status.connected': '已連線', 'status.disconnected': '未連線', 'screen.name': '螢幕 {n}',
         'btn.scan': '掃描裝置', 'btn.uploadImage': '上傳圖片', 'btn.uploadVideo': '上傳影片',
         'btn.clear': '清除螢幕', 'btn.clearLogs': '清除',
         'btn.save': '儲存設定', 'btn.apply': '套用設定', 'btn.reset': '重設',
@@ -105,11 +104,10 @@ const I18N = {
         'sys.autoplayMedia': '播放媒體', 'sys.autoplay.none': '（未選擇媒體）',
         'sys.appearance': '外觀設定',
         'sys.minimizeToTray': '最小化到系統托盤', 'sys.minimizeToTray.desc': '關閉視窗時最小化到托盤，繼續背景執行',
-        'sys.language': '語言', 'sys.about': '關於', 'sys.version': '版本 1.0.1',
+        'sys.language': '語言', 'sys.about': '關於', 'sys.version': '版本 1.1.2',
         'sys.author': '作者', 'sys.protocol': '協定', 'sys.aboutCopy': '支援利民 Thermalright 全系列水冷螢幕',
         'diag.refresh': '重新整理裝置列表', 'diag.known': '已知裝置列表', 'diag.allUsb': '所有USB裝置',
         'diag.sidebar.devices': '裝置列表',
-        'diag.allUsb.desc': '找到你的水冷螢幕的 VID/PID 告訴我',
         'diag.clickRefresh': '點擊「重新整理裝置列表」掃描', 'diag.logs': '即時日誌',
         'diag.waitingLogs': '等待日誌...', 'diag.noKnown': '無已知裝置', 'diag.noUsb': '未偵測到任何USB裝置',
         'diag.found': '已偵測到', 'diag.notFound': '未偵測到', 'diag.matched': '匹配已知裝置',
@@ -138,7 +136,7 @@ const I18N = {
         'page.display.title': 'Display', 'page.display.sub': 'Adjust display effects and performance',
         'page.system.title': 'Settings', 'page.system.sub': 'Configure startup, appearance and system options',
         'page.diagnostics.title': 'Device Info', 'page.diagnostics.sub': 'View all USB devices to identify your screen',
-        'status.connected': 'Connected', 'status.disconnected': 'Disconnected',
+        'status.connected': 'Connected', 'status.disconnected': 'Disconnected', 'screen.name': 'Screen {n}',
         'btn.scan': 'Scan Devices', 'btn.uploadImage': 'Upload Image', 'btn.uploadVideo': 'Upload Video',
         'btn.clear': 'Clear Screen', 'btn.clearLogs': 'Clear',
         'btn.save': 'Save Settings', 'btn.apply': 'Apply Settings', 'btn.reset': 'Reset',
@@ -170,11 +168,10 @@ const I18N = {
         'sys.autoplayMedia': 'Media to Play', 'sys.autoplay.none': '(No media selected)',
         'sys.appearance': 'Appearance',
         'sys.minimizeToTray': 'Minimize to Tray', 'sys.minimizeToTray.desc': 'Minimize to tray on close and keep running',
-        'sys.language': 'Language', 'sys.about': 'About', 'sys.version': 'Version 1.0.1',
+        'sys.language': 'Language', 'sys.about': 'About', 'sys.version': 'Version 1.1.2',
         'sys.author': 'Author', 'sys.protocol': 'Protocol', 'sys.aboutCopy': 'Supports all Thermalright water cooling screens',
         'diag.refresh': 'Refresh Devices', 'diag.known': 'Known Devices', 'diag.allUsb': 'All USB Devices',
         'diag.sidebar.devices': 'Devices',
-        'diag.allUsb.desc': 'Found the VID/PID of your screen? Let me know',
         'diag.clickRefresh': 'Click "Refresh Devices" to scan', 'diag.logs': 'Live Logs',
         'diag.waitingLogs': 'Waiting for logs...', 'diag.noKnown': 'No known devices', 'diag.noUsb': 'No USB devices detected',
         'diag.found': 'Detected', 'diag.notFound': 'Not detected', 'diag.matched': 'Matches a known device',
@@ -203,7 +200,7 @@ const I18N = {
         'page.display.title': '表示', 'page.display.sub': '表示効果とパフォーマンスを調整',
         'page.system.title': '設定', 'page.system.sub': '起動・外観・システムオプションを設定',
         'page.diagnostics.title': 'デバイス情報', 'page.diagnostics.sub': 'USBデバイス情報を確認',
-        'status.connected': '接続済み', 'status.disconnected': '未接続',
+        'status.connected': '接続済み', 'status.disconnected': '未接続', 'screen.name': '画面 {n}',
         'btn.scan': 'デバイスをスキャン', 'btn.uploadImage': '画像をアップロード', 'btn.uploadVideo': '動画をアップロード',
         'btn.clear': '画面クリア', 'btn.clearLogs': 'クリア',
         'btn.save': '設定を保存', 'btn.apply': '設定を適用', 'btn.reset': 'リセット',
@@ -235,11 +232,10 @@ const I18N = {
         'sys.autoplayMedia': '再生メディア', 'sys.autoplay.none': '（未選択）',
         'sys.appearance': '外観設定',
         'sys.minimizeToTray': 'トレイに最小化', 'sys.minimizeToTray.desc': '閉じるとトレイに最小化してバックグラウンドで実行',
-        'sys.language': '言語', 'sys.about': '情報', 'sys.version': 'バージョン 1.0.1',
+        'sys.language': '言語', 'sys.about': '情報', 'sys.version': 'バージョン 1.1.2',
         'sys.author': '作者', 'sys.protocol': 'プロトコル', 'sys.aboutCopy': 'Thermalright 水冷スクリーン全シリーズに対応',
         'diag.refresh': 'デバイス一覧を更新', 'diag.known': '既知のデバイス', 'diag.allUsb': 'すべてのUSBデバイス',
         'diag.sidebar.devices': 'デバイス一覧',
-        'diag.allUsb.desc': 'スクリーンの VID/PID が見つかりましたか？',
         'diag.clickRefresh': '「デバイス一覧を更新」をクリックしてスキャン', 'diag.logs': 'ライブログ',
         'diag.waitingLogs': 'ログを待機中...', 'diag.noKnown': '既知のデバイスなし', 'diag.noUsb': 'USBデバイスを検出できません',
         'diag.found': '検出済み', 'diag.notFound': '未検出', 'diag.matched': '既知デバイスと一致',
@@ -405,6 +401,12 @@ if (window.chrome && window.chrome.webview) {
 
 function handleMessage(msg) {
     switch (msg.action) {
+        case 'scanState':
+            setScanState(msg.data.scanning);
+            break;
+        case 'screensList':
+            updateScreensList(msg.data);
+            break;
         case 'deviceStatus':
             updateDeviceStatus(msg.data);
             break;
@@ -441,23 +443,25 @@ function handleMessage(msg) {
 
 // ==================== 设备状态 ====================
 function updateDeviceStatus(data) {
+    // 非当前屏的状态只更新切换条徽标，不刷新主界面
+    if (data.screen !== undefined && data.screen !== currentScreen) {
+        updateScreenBarBadge(data);
+        return;
+    }
     const dot = document.getElementById('statusDot');
     const text = document.getElementById('statusText');
-    const statDevices = document.getElementById('statDevices');
     const statDeviceName = document.getElementById('statDeviceName');
     const screenRes = document.getElementById('screenRes');
 
     if (data.connected) {
         dot.classList.add('connected');
         text.textContent = tText('status.connected');
-        statDevices.textContent = '1';
         statDeviceName.textContent = data.deviceName || tText('status.connected');
         statDeviceName.dataset.conn = '1';
         screenRes.textContent = data.resolution || '--×--';
     } else {
         dot.classList.remove('connected');
         text.textContent = tText('status.disconnected');
-        statDevices.textContent = '0';
         statDeviceName.textContent = tText('status.disconnected');
         statDeviceName.dataset.conn = '0';
         screenRes.textContent = '--×--';
@@ -465,31 +469,120 @@ function updateDeviceStatus(data) {
 }
 
 function updateScanResult(data) {
-    document.getElementById('statDevices').textContent = data.count || 0;
-    if (data.count > 0) {
+    setScanState(false);
+    // 已连接数量由 screensList / deviceStatus 驱动，这里只反馈扫描结果，
+    // 避免把“发现的设备数”当成“已连接设备数”
+    if (data.connected) {
         showToast(tText('toast.scanFound', { count: data.count }), 'success');
     } else {
-        showToast(tText('toast.scanNone'), 'warning');
+        showToast(data.error || tText('toast.scanNone'), 'warning');
     }
+}
+
+// 扫描期间禁用按钮并显示进度
+function setScanState(scanning) {
+    const button = document.getElementById('scanDevicesBtn');
+    if (!button) return;
+    button.disabled = !!scanning;
+    const label = button.querySelector('span');
+    if (label) label.textContent = tText(scanning ? 'toast.scanning' : 'btn.scan');
+}
+
+// ==================== 多屏幕切换 ====================
+function updateScreensList(data) {
+    screensData = data.screens || [];
+    // 当前屏幕越界（如只剩单屏）时回退到 0，并重新拉取该屏设置
+    const prev = currentScreen;
+    if (!screensData.some(s => s.index === currentScreen)) {
+        currentScreen = 0;
+        if (prev !== currentScreen) {
+            postToCSharp('getSettings', { screen: currentScreen });
+            postToCSharp('getDeviceStatus', { screen: currentScreen });
+            postToCSharp('getPlaybackStatus', { screen: currentScreen });
+        }
+    }
+    renderScreenBar();
+    const statDevices = document.getElementById('statDevices');
+    if (statDevices) {
+        const cnt = data.connectedCount !== undefined ? data.connectedCount : screensData.filter(s => s.connected).length;
+        statDevices.textContent = cnt;
+    }
+    updateScreenLabels();
+}
+
+// 渲染顶部屏幕切换条：仅当检测到多块屏幕时显示
+function renderScreenBar() {
+    const bar = document.getElementById('screenBar');
+    const inner = document.getElementById('screenBarInner');
+    if (!bar || !inner) return;
+
+    if (!screensData || screensData.length < 2) {
+        bar.style.display = 'none';
+        inner.innerHTML = '';
+        return;
+    }
+    bar.style.display = 'flex';
+    inner.innerHTML = '';
+    screensData.forEach(s => {
+        const btn = document.createElement('button');
+        btn.className = 'screen-bar-item' + (s.index === currentScreen ? ' active' : '');
+        btn.dataset.screen = s.index;
+        const res = s.resolution ? ` · ${s.resolution}` : '';
+        btn.textContent = s.name + res;
+        btn.addEventListener('click', () => switchScreen(s.index));
+        inner.appendChild(btn);
+    });
+}
+
+// 非当前屏的 deviceStatus 只更新切换条上的连接标记
+function updateScreenBarBadge(data) {
+    const inner = document.getElementById('screenBarInner');
+    if (!inner) return;
+    const btn = inner.querySelector(`.screen-bar-item[data-screen="${data.screen}"]`);
+    if (btn) btn.classList.toggle('connected', !!data.connected);
+}
+
+// 切换当前管理的屏幕：刷新切换条并重新拉取该屏设置与状态
+function switchScreen(index) {
+    if (index === currentScreen) return;
+    currentScreen = index;
+    renderScreenBar();
+    updateScreenLabels();
+    postToCSharp('getSettings', { screen: index });
+    postToCSharp('getDeviceStatus', { screen: index });
+    postToCSharp('getPlaybackStatus', { screen: index });
+}
+
+// 更新「显示」页与「开机自动播放」处的当前屏幕标签
+function updateScreenLabels() {
+    const cur = screensData.find(s => s.index === currentScreen);
+    const label = cur
+        ? (cur.name || tText('screen.name', { n: cur.index + 1 })) + (cur.resolution ? ` · ${cur.resolution}` : '')
+        : '';
+    document.querySelectorAll('.cur-screen-label').forEach(el => {
+        el.textContent = label;
+    });
 }
 
 // ==================== 仪表盘操作 ====================
 function scanDevices() {
+    setScanState(true);
     showToast(tText('toast.scanning'));
     postToCSharp('scanDevices');
 }
 
 function sendTestPattern(pattern) {
-    postToCSharp('sendTestPattern', { pattern });
+    postToCSharp('sendTestPattern', { pattern, screen: currentScreen });
     showToast(tText('toast.sendingPattern', { pattern }));
 }
 
 function clearDisplay() {
-    postToCSharp('clearDisplay');
+    postToCSharp('clearDisplay', { screen: currentScreen });
     showToast(tText('toast.cleared'));
 }
 
 function updatePlaybackStatus(data) {
+    if (data.screen !== undefined && data.screen !== currentScreen) return;
     const el = document.getElementById('statPlayback');
     const fps = document.getElementById('statFps');
     el.dataset.playing = data.playing ? '1' : '0';
@@ -551,6 +644,9 @@ function formatSize(bytes) {
 // ==================== 媒体库 ====================
 let currentFilter = 'all';
 let mediaItems = [];
+// 当前管理的屏幕索引与后端推送的屏幕列表（多屏切换）
+let currentScreen = 0;
+let screensData = [];
 // 服务端保存的自动播放媒体 ID（媒体列表加载完成后据此回填下拉框，
 // 解决“列表先于设置到达导致选中丢失”的问题）
 let savedAutoplayMediaId = '';
@@ -626,7 +722,7 @@ function uploadMedia(type) {
 }
 
 function playMedia(id) {
-    postToCSharp('playMedia', { id });
+    postToCSharp('playMedia', { id, screen: currentScreen });
     showToast(tText('toast.playStart'));
 }
 
@@ -715,6 +811,7 @@ function getDisplaySettings() {
     const rotationEl = document.querySelector('.option-tab.active[data-rotation]');
     const fitEl = document.querySelector('.option-tab.active[data-fit]');
     return {
+        screen: currentScreen,
         brightness: +document.getElementById('brightness').value,
         contrast: +document.getElementById('contrast').value,
         saturation: +document.getElementById('saturation').value,
@@ -735,6 +832,8 @@ function scheduleApply() {
 }
 
 function loadSettings(data) {
+    // 非当前屏的设置到达时忽略（切换屏幕后各自拉取）
+    if (data.screen !== undefined && data.screen !== currentScreen) return;
     if (data.brightness !== undefined) document.getElementById('brightness').value = data.brightness;
     if (data.contrast !== undefined) document.getElementById('contrast').value = data.contrast;
     if (data.saturation !== undefined) document.getElementById('saturation').value = data.saturation;
@@ -836,6 +935,7 @@ function toggleAutoStart() {
 function getSystemSettings() {
     const langEl = document.getElementById('language');
     return {
+        screen: currentScreen,
         startMinimized: document.getElementById('startMinimized').checked,
         highPriority: document.getElementById('fastStartup').checked,
         minimizeToTray: document.getElementById('minimizeToTray').checked,
@@ -1001,6 +1101,7 @@ window.addEventListener('load', () => {
     // 延迟一点确保 webview bridge 就绪
     setTimeout(() => {
         postToCSharp('init');
+        postToCSharp('getScreens');
         postToCSharp('getSettings');
         postToCSharp('getAutoStartStatus');
         postToCSharp('getMediaList');

@@ -2,7 +2,7 @@
 ; 用法: ISCC.exe installer.iss
 
 #define MyAppName "Modern TRCC"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.1.2"
 #define MyAppPublisher "穗月"
 #define MyAppExeName "ModernTRCC.exe"
 #define MyAppId "{{8F3C1E2A-5B4D-4C6E-9A7F-2D1E0B3C4A5D}"

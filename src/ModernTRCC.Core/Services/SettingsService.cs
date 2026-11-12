@@ -33,7 +33,11 @@ public class SettingsService
             {
                 string json = File.ReadAllText(_settingsPath);
                 var settings = JsonConvert.DeserializeObject<AppSettings>(json);
-                if (settings != null) return settings;
+                if (settings != null)
+                {
+                    MigrateLegacySettings(settings);
+                    return settings;
+                }
             }
         }
         catch
@@ -41,13 +45,16 @@ public class SettingsService
             // 加载失败使用默认值
         }
 
-        return new AppSettings();
+        var def = new AppSettings();
+        MigrateLegacySettings(def);
+        return def;
     }
 
     public void Save()
     {
         try
         {
+            MirrorScreensToLegacy(Settings);
             string json = JsonConvert.SerializeObject(Settings, Formatting.Indented);
             File.WriteAllText(_settingsPath, json);
             SettingsChanged?.Invoke(this, EventArgs.Empty);
@@ -56,6 +63,53 @@ public class SettingsService
         {
             // 保存失败忽略
         }
+    }
+
+    /// <summary>
+    /// 迁移 v1.0.x 旧版根级设置到新的每屏设置：
+    /// Screens 为空时用旧字段初始化第一屏，并补齐屏幕序号/名称。
+    /// </summary>
+    private static void MigrateLegacySettings(AppSettings settings)
+    {
+        if (settings.Screens == null || settings.Screens.Count == 0)
+        {
+            settings.Screens = new List<ScreenSettings>
+            {
+                new ScreenSettings
+                {
+                    Index = 0,
+                    Name = "屏幕 1",
+                    Display = settings.Display ?? new DisplaySettings(),
+                    Playback = settings.Playback ?? new PlaybackSettings(),
+                    AutoPlay = settings.AutoPlay ?? new AutoPlaySettings(),
+                }
+            };
+        }
+        // 清理历史遗留：DeviceKey 为空的未绑定条目只保留一条（其余是重复创建的垃圾，
+        // 它们 Index 与真实屏幕条目重叠，会导致按 Index 匹配设置时写错条目）
+        var unbound = settings.Screens.Where(s => string.IsNullOrEmpty(s.DeviceKey)).ToList();
+        if (unbound.Count > 1)
+        {
+            var keep = unbound[0];
+            foreach (var dup in unbound.Skip(1).ToList())
+                settings.Screens.Remove(dup);
+        }
+        for (int i = 0; i < settings.Screens.Count; i++)
+        {
+            settings.Screens[i].Index = i;
+            if (string.IsNullOrEmpty(settings.Screens[i].Name))
+                settings.Screens[i].Name = $"屏幕 {i + 1}";
+        }
+    }
+
+    /// <summary>保存前把第一屏设置镜像回旧版根级字段，保证旧 settings.json 兼容可读</summary>
+    private static void MirrorScreensToLegacy(AppSettings settings)
+    {
+        if (settings.Screens == null || settings.Screens.Count == 0) return;
+        var s0 = settings.Screens[0];
+        settings.Display = s0.Display;
+        settings.Playback = s0.Playback;
+        settings.AutoPlay = s0.AutoPlay;
     }
 
     public void Initialize()

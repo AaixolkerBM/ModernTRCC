@@ -9,14 +9,25 @@ public partial class SplashWindow : Window
     {
         InitializeComponent();
 
-        // 不确定进度条：金色滑块在轨道内来回滑动。
-        // 轨道宽度 = 窗口宽度 - 左右边距(36*2)；滑块宽 140，完全滑出右侧时 X = 轨道宽度
-        double trackWidth = Math.Max(100, Width - 72);
+        // 等布局完成后再启动动画，保证能拿到轨道的真实宽度
+        Loaded += (_, _) => StartProgressAnimation();
+    }
+
+    /// <summary>
+    /// 不确定进度条：金色滑块在灰色轨道内来回滑动，不会超出轨道范围。
+    /// </summary>
+    private void StartProgressAnimation()
+    {
+        double trackWidth = ProgressTrack.ActualWidth;
+        double sliderWidth = ProgressFill.ActualWidth;
+        double maxOffset = Math.Max(0, trackWidth - sliderWidth);
+
         var anim = new DoubleAnimation
         {
-            From = -140,
-            To = trackWidth,
-            Duration = TimeSpan.FromMilliseconds(1500),
+            From = 0,
+            To = maxOffset,
+            Duration = TimeSpan.FromMilliseconds(1200),
+            AutoReverse = true,
             RepeatBehavior = RepeatBehavior.Forever,
             EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseInOut }
         };

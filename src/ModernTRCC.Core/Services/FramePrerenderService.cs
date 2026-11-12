@@ -63,7 +63,7 @@ public class FramePrerenderService : IDisposable
         try
         {
             using var bmp = new Bitmap(imagePath);
-            var rgb565 = RenderBitmapToRgb565(bmp, width, height,
+            var rgb565 = RenderBitmapToRgb888(bmp, width, height,
                 brightness, contrast, saturation, rotation, fitMode);
 
             var frame = new PreRenderedFrame(width, height, rgb565);
@@ -90,7 +90,7 @@ public class FramePrerenderService : IDisposable
         int width = _controller.ActiveDeviceInfo.Width;
         int height = _controller.ActiveDeviceInfo.Height;
 
-        var rgb565 = RenderBitmapToRgb565(bitmap, width, height,
+        var rgb565 = RenderBitmapToRgb888(bitmap, width, height,
             brightness, contrast, saturation, rotation, fitMode);
 
         var frame = new PreRenderedFrame(width, height, rgb565);
@@ -157,11 +157,15 @@ public class FramePrerenderService : IDisposable
 
     #region 渲染核心
 
-    private byte[] RenderBitmapToRgb565(Bitmap source, int targetWidth, int targetHeight,
+    internal static byte[] RenderBitmapToRgb888(Bitmap source, int targetWidth, int targetHeight,
         int brightness, int contrast, int saturation, int rotation, string fitMode)
     {
-        // 1. 缩放和裁剪
-        using var resized = ResizeBitmap(source, targetWidth, targetHeight, fitMode);
+        // 90°/270° 时先在“可见方向”上合成，再旋转成设备原生栅格。
+        // 直接按设备宽高合成再旋转会裁切矩形屏（如 1920x462）。
+        bool quarterTurn = rotation is 90 or 270;
+        using var resized = ResizeBitmap(source,
+            quarterTurn ? targetHeight : targetWidth,
+            quarterTurn ? targetWidth : targetHeight, fitMode);
 
         // 2. 旋转
         using var rotated = rotation != 0 ? RotateBitmap(resized, rotation) : new Bitmap(resized);
@@ -228,12 +232,16 @@ public class FramePrerenderService : IDisposable
 
     private static Bitmap RotateBitmap(Bitmap source, int angle)
     {
-        var result = new Bitmap(source.Width, source.Height);
-        using var g = Graphics.FromImage(result);
-        g.TranslateTransform((float)source.Width / 2, (float)source.Height / 2);
-        g.RotateTransform(angle);
-        g.TranslateTransform(-(float)source.Width / 2, -(float)source.Height / 2);
-        g.DrawImage(source, 0, 0);
+        // RotateFlip 会同时交换 90°/270° 的画布宽高，配合上方的预交换尺寸，
+        // 结果正好是设备原生栅格，不会被裁切。
+        var result = new Bitmap(source);
+        result.RotateFlip(angle switch
+        {
+            90 => RotateFlipType.Rotate90FlipNone,
+            180 => RotateFlipType.Rotate180FlipNone,
+            270 => RotateFlipType.Rotate270FlipNone,
+            _ => RotateFlipType.RotateNoneFlipNone
+        });
         return result;
     }
 
@@ -250,12 +258,14 @@ public class FramePrerenderService : IDisposable
         if (string.IsNullOrEmpty(ffmpegPath))
             yield break;
 
-        // 屏幕旋转：在 ffmpeg 阶段用 transpose 旋转，再 scale 到设备分辨率
+        // 屏幕旋转：在 ffmpeg 阶段旋转，再 scale 到设备分辨率
         // （transpose 会交换宽高，随后的 scale 归一化，方形/非方形屏均正确）
+        // 注意：transpose=3 是“顺时针90°+垂直翻转”，连续两次会互相抵消成原图，
+        // 因此 180° 必须用 hflip,vflip（纯 180° 旋转），90° 用 transpose=1（纯顺时针90°）
         string rotationFilter = rotation switch
         {
-            90 => "transpose=3",       // 顺时针 90°
-            180 => "transpose=3,transpose=3", // 180°
+            90 => "transpose=1",       // 顺时针 90°
+            180 => "hflip,vflip",      // 180°
             270 => "transpose=2",      // 逆时针 90° = 顺时针 270°
             _ => ""
         };

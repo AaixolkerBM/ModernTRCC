@@ -13,6 +13,13 @@ public class LcdDeviceInfo
     public string? SerialNumber { get; set; }
     public byte Fbl { get; set; }
     public byte Pm { get; set; }
+    public byte Sub { get; set; }
+
+    /// <summary>原生 HID 接口路径（0416:5302 等复合设备通过它打开正确集合）</summary>
+    public string? HidDevicePath { get; set; }
+
+    /// <summary>扫描时保存的 USB 注册表项，用于打开指定设备（支持同 VID/PID 多设备）</summary>
+    internal object? Registry { get; set; }
 
     public string ResolutionText => $"{Width}×{Height}";
     public string VidPidText => $"0x{Vid:X4}:0x{Pid:X4}";

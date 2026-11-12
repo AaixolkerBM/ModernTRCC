@@ -40,6 +40,7 @@ public class LcdController : IDisposable, INotifyPropertyChanged
     #region 字段
 
     private UsbDevice? _activeDevice;
+    private HidLcdTransport? _hidDevice;
     private UsbEndpointWriter? _writer;
     private UsbEndpointReader? _reader;
     private readonly object _sendLock = new();
@@ -70,7 +71,7 @@ public class LcdController : IDisposable, INotifyPropertyChanged
     }
 
     public long FrameCount => _frameCount;
-    public bool IsConnected => _activeDevice != null && _isRunning;
+    public bool IsConnected => (_activeDevice != null || _hidDevice != null) && _isRunning;
 
     /// <summary>最近一次入队的 RGB888 帧（用于实时预览镜像）</summary>
     public byte[]? LastFrame { get; private set; }
@@ -96,23 +97,54 @@ public class LcdController : IDisposable, INotifyPropertyChanged
     public int ScanDevices()
     {
         Devices.Clear();
+
+        // ① 原生 HID 通道：部分 0416:5302 是复合设备，显示接口没有 WinUSB GUID，
+        //    LibUsbDotNet 枚举不到，只能通过 SetupAPI 打开 HID 集合。
+        try
+        {
+            foreach (var path in HidLcdTransport.FindDevices(0x0416, 0x5302))
+            {
+                Devices.Add(new LcdDeviceInfo
+                {
+                    Name = "Thermalright HID LCD", Brand = "Thermalright",
+                    Vid = 0x0416, Pid = 0x5302, Type = LcdDeviceType.Hid,
+                    HidDevicePath = path, Width = 480, Height = 480
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorOccurred?.Invoke(this, $"HID 枚举失败: {ex.Message}");
+        }
+
+        // ② LibUsbDotNet 通道（SCSI/ALi/LY 等）
         var allDevices = UsbDevice.AllDevices;
 
         foreach (var (vid, pid, type, name, brand) in KnownDevices)
         {
+            // 同一 VID/PID 可能对应多个注册表项（接口级拆分），只保留第一个并去重；
+            // 已由原生 HID 通道发现的设备不再重复枚举。
+            if (Devices.Any(d => d.Vid == vid && d.Pid == pid && d.HidDevicePath != null)) continue;
+
+            UsbRegistry? firstReg = null;
             foreach (UsbRegistry reg in allDevices)
             {
                 if (reg.Vid == vid && reg.Pid == pid)
                 {
-                    var info = new LcdDeviceInfo
-                    {
-                        Name = name, Brand = brand, Vid = vid, Pid = pid, Type = type
-                    };
-                    // 默认 480x480，连接后通过握手获取实际分辨率
-                    info.Width = 480;
-                    info.Height = 480;
-                    Devices.Add(info);
+                    if (firstReg == null) firstReg = reg;
                 }
+            }
+            if (firstReg != null)
+            {
+                var info = new LcdDeviceInfo
+                {
+                    Name = name, Brand = brand, Vid = vid, Pid = pid, Type = type,
+                    Registry = firstReg
+                };
+                // 默认 480x480，连接后通过握手获取实际分辨率
+                info.Width = 480;
+                info.Height = 480;
+                Devices.Add(info);
             }
         }
         return Devices.Count;
@@ -122,14 +154,52 @@ public class LcdController : IDisposable, INotifyPropertyChanged
 
     #region 连接（精确匹配原版协议）
 
+    /// <summary>
+    /// 打开指定设备：优先按扫描时保存的注册表项打开（支持同 VID/PID 多设备），
+    /// 失败时回退到按 VID/PID 打开第一个匹配设备。
+    /// </summary>
+    private static UsbDevice? OpenUsbDevice(LcdDeviceInfo info)
+    {
+        if (info.Registry is UsbRegistry reg)
+        {
+            try
+            {
+                if (reg.IsAlive)
+                {
+                    var dev = reg.Device;
+                    if (dev != null) return dev;
+                }
+            }
+            catch { }
+        }
+        return UsbDevice.OpenUsbDevice(new UsbDeviceFinder(info.Vid, info.Pid));
+    }
+
     public bool Connect(LcdDeviceInfo deviceInfo)
     {
         try
         {
             Disconnect();
 
-            var finder = new UsbDeviceFinder(deviceInfo.Vid, deviceInfo.Pid);
-            var device = UsbDevice.OpenUsbDevice(finder);
+            // 原生 HID 通道（0416:5302 复合设备）
+            if (!string.IsNullOrEmpty(deviceInfo.HidDevicePath))
+            {
+                _hidDevice = HidLcdTransport.Open(deviceInfo.HidDevicePath);
+                ActiveDeviceInfo = deviceInfo;
+                if (!HidLcdProtocol.TryApplyDeviceInfo(
+                        _hidDevice.Exchange(HidLcdProtocol.CreateInfoRequest()), deviceInfo))
+                {
+                    LastError = "HID 屏幕握手响应无效";
+                    ErrorOccurred?.Invoke(this, LastError);
+                    Disconnect();
+                    return false;
+                }
+                ErrorOccurred?.Invoke(this, $"[INFO] HID 握手成功! 分辨率: {deviceInfo.Width}x{deviceInfo.Height}");
+                StartSending(deviceInfo);
+                return true;
+            }
+
+            var device = OpenUsbDevice(deviceInfo);
             if (device == null)
             {
                 LastError = "无法打开 USB 设备（可能被其他程序占用或驱动异常）";
@@ -194,25 +264,32 @@ public class LcdController : IDisposable, INotifyPropertyChanged
             // 记录握手结果
             ErrorOccurred?.Invoke(this, $"[INFO] 握手成功! 分辨率: {deviceInfo.Width}x{deviceInfo.Height}");
 
-            deviceInfo.IsInitialized = true;
-            _isRunning = true;
-            _sendThread = new Thread(SendThreadProc)
-            {
-                IsBackground = true,
-                Priority = ThreadPriority.AboveNormal
-            };
-            _sendThread.Start();
-
-            LastError = "";
-            DeviceConnected?.Invoke(this, deviceInfo);
+            StartSending(deviceInfo);
             return true;
         }
         catch (Exception ex)
         {
             LastError = ex.Message;
             ErrorOccurred?.Invoke(this, ex.Message);
+            Disconnect();
             return false;
         }
+    }
+
+    /// <summary>启动发送线程并广播连接成功（真实 USB 与原生 HID 通道共用）</summary>
+    private void StartSending(LcdDeviceInfo deviceInfo)
+    {
+        deviceInfo.IsInitialized = true;
+        _isRunning = true;
+        _sendThread = new Thread(SendThreadProc)
+        {
+            IsBackground = true,
+            Priority = ThreadPriority.AboveNormal
+        };
+        _sendThread.Start();
+
+        LastError = "";
+        DeviceConnected?.Invoke(this, deviceInfo);
     }
 
     public void Disconnect()
@@ -220,8 +297,11 @@ public class LcdController : IDisposable, INotifyPropertyChanged
         _isRunning = false;
         _frameEvent.Set();
 
-        // 等待发送线程退出，确保设备句柄被释放后再重连，避免“设备被占用”
-        try { _sendThread?.Join(500); } catch { }
+        // 先释放 HID 句柄再等待发送线程退出：HID 写超时为 5 秒，
+        // 仅靠 Join 长时间等待会让扫描/重连明显卡顿。
+        try { _hidDevice?.Dispose(); } catch { }
+        _hidDevice = null;
+        try { _sendThread?.Join(1500); } catch { }
         _sendThread = null;
 
         try
@@ -244,6 +324,7 @@ public class LcdController : IDisposable, INotifyPropertyChanged
         ActiveDeviceInfo = null;
 
         lock (_sendLock) _frameQueue.Clear();
+        LastFrame = null;
     }
 
     #endregion
@@ -335,20 +416,8 @@ public class LcdController : IDisposable, INotifyPropertyChanged
         }
         catch { }
 
-        // 验证：bytes[0-3] == [0xDA,0xDB,0xDC,0xDD], byte[12]==1, byte[16]==16
-        if (response[0] == 0xDA && response[1] == 0xDB &&
-            response[2] == 0xDC && response[3] == 0xDD &&
-            response[12] == 1 && response[16] == 16)
-        {
-            if (ActiveDeviceInfo != null)
-            {
-                // 原版 TRCC：HID 设备分辨率由响应 byte[5] 的 fbl 码决定
-                // （USBLCDNEW 写入 shareMemoryValRGB[1]=array[5]，TRCC 以它为 fbl 传入 FormCZTVInit）
-                ApplyFblResolution(ActiveDeviceInfo, response[5]);
-            }
-            return true;
-        }
-        return false;
+        // 统一由 HidLcdProtocol 校验并解析 PM/分辨率/序列号
+        return ActiveDeviceInfo != null && HidLcdProtocol.TryApplyDeviceInfo(response, ActiveDeviceInfo);
     }
 
     /// <summary>
@@ -411,6 +480,7 @@ public class LcdController : IDisposable, INotifyPropertyChanged
             100 or 101 or 102 => (320, 320),
             36 or 37 => (240, 240),
             128 => (1280, 480),
+            192 => (1920, 462),
             59 => (640, 172),
             60 => (176, 320),
             _ => (480, 480),
@@ -449,8 +519,27 @@ public class LcdController : IDisposable, INotifyPropertyChanged
         {
             if (ActiveDeviceInfo != null)
             {
-                ActiveDeviceInfo.Width = 480;
-                ActiveDeviceInfo.Height = 480;
+                // 原版 USBLCDNEW 握手解析（TRCC 2.1.6）：
+                //   LY (0x5408)：PM = 64 + resp[20]（resp[20]<=3 按 1 计），SUB = resp[22] + 1
+                //   LY1(0x5409)：PM = 49 + resp[20]，SUB = resp[22]
+                // PM 65/66/68/69 → FBL 192（Trofeo Vision 9.16 系列，共享多分辨率）
+                byte rawPm = response[20];
+                if (!isLy1 && rawPm <= 3) rawPm = 1;
+                int pm = isLy1 ? 49 + rawPm : 64 + rawPm;
+                byte sub = (byte)(isLy1 ? response[22] : response[22] + 1);
+
+                ActiveDeviceInfo.Pm = (byte)pm;
+                ActiveDeviceInfo.Sub = sub;
+
+                // FBL 192 按 PM 区分分辨率（TRCC 2.1.6 FormCZTV：is1920x462/is1280x480/is1920x440）
+                (int w, int h) = pm switch
+                {
+                    68 => (1280, 480),
+                    69 => (1920, 440),
+                    _ => (1920, 462),
+                };
+                ActiveDeviceInfo.Width = w;
+                ActiveDeviceInfo.Height = h;
             }
             return true;
         }
@@ -467,7 +556,7 @@ public class LcdController : IDisposable, INotifyPropertyChanged
     /// </summary>
     public bool SendFrameRgb888(byte[] rgb888Data)
     {
-        if (!_isRunning || _activeDevice == null || ActiveDeviceInfo == null)
+        if (!IsConnected || ActiveDeviceInfo == null)
             return false;
 
         lock (_sendLock)
@@ -501,6 +590,7 @@ public class LcdController : IDisposable, INotifyPropertyChanged
     private void SendThreadProc()
     {
         var sw = new System.Diagnostics.Stopwatch();
+        var sinceLastSend = System.Diagnostics.Stopwatch.StartNew();
         while (_isRunning)
         {
             byte[]? frameData = null;
@@ -510,6 +600,11 @@ public class LcdController : IDisposable, INotifyPropertyChanged
                     frameData = _frameQueue.Dequeue();
             }
 
+            // 部分 HID 屏在静态画面一段时间后会回到开机 logo，需每秒重发最后一帧
+            if (frameData == null && _hidDevice != null && LastFrame != null
+                && sinceLastSend.ElapsedMilliseconds >= 1000)
+                frameData = LastFrame;
+
             if (frameData != null)
             {
                 try
@@ -518,6 +613,7 @@ public class LcdController : IDisposable, INotifyPropertyChanged
                     LastFrame = frameData;
                     sw.Restart();
                     SendFrameInternal(frameData);
+                    sinceLastSend.Restart();
                     _frameCount++;
                     FrameSent?.Invoke(this, _frameCount);
                 }
@@ -539,7 +635,16 @@ public class LcdController : IDisposable, INotifyPropertyChanged
 
     private void SendFrameInternal(byte[] rgb888Data)
     {
-        if (_writer == null || ActiveDeviceInfo == null) return;
+        if (ActiveDeviceInfo == null) return;
+
+        // 原生 HID 通道优先（不受 LibUsbDotNet 端点数限制）
+        if (_hidDevice != null)
+        {
+            _hidDevice.Write(HidLcdProtocol.CreateFrame(rgb888Data, ActiveDeviceInfo));
+            return;
+        }
+
+        if (_writer == null) return;
 
         switch (ActiveDeviceInfo.Type)
         {
@@ -582,37 +687,8 @@ public class LcdController : IDisposable, INotifyPropertyChanged
         int w = ActiveDeviceInfo.Width;
         int h = ActiveDeviceInfo.Height;
 
-        // 1. RGB888 → Bitmap → JPEG 压缩
-        // 注意：Format24bppRgb 的内存布局是 BGR，直接拷贝 RGB888 会导致红蓝互换。
-        // 需要先把 R/G/B 交换为 B/G/R 再写入，JPEG 编码结果才与屏幕颜色一致。
-        byte[] jpegData;
-        using (var bmp = new Bitmap(w, h, DrawPixelFormat.Format24bppRgb))
-        {
-            var rect = new Rectangle(0, 0, w, h);
-            var bmpData = bmp.LockBits(rect, ImageLockMode.WriteOnly, DrawPixelFormat.Format24bppRgb);
-
-            byte[] bgr = new byte[rgb888Data.Length];
-            for (int i = 0; i < rgb888Data.Length; i += 3)
-            {
-                bgr[i] = rgb888Data[i + 2];      // B
-                bgr[i + 1] = rgb888Data[i + 1];  // G
-                bgr[i + 2] = rgb888Data[i];      // R
-            }
-            Marshal.Copy(bgr, 0, bmpData.Scan0, bgr.Length);
-            bmp.UnlockBits(bmpData);
-
-            // JPEG 压缩，质量 95
-            var jpegEncoder = ImageCodecInfo
-                .GetImageEncoders()
-                .First(c => c.FormatID == ImageFormat.Jpeg.Guid);
-            var encoderParams = new EncoderParameters(1);
-            encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, 95L);
-
-            using var ms = new MemoryStream();
-            bmp.Save(ms, jpegEncoder, encoderParams);
-            encoderParams.Dispose();
-            jpegData = ms.ToArray();
-        }
+        // 1. RGB888 → JPEG 压缩（质量 95，与原版 TRCC 一致）
+        byte[] jpegData = EncodeJpeg(rgb888Data, w, h);
 
         int dataLen = jpegData.Length;
         int totalLen = dataLen + 64;
@@ -663,6 +739,44 @@ public class LcdController : IDisposable, INotifyPropertyChanged
     }
 
     /// <summary>
+    /// 将 RGB888 帧压缩为 JPEG（质量 95），与 TRCC 原版一致。
+    /// 注意：Format24bppRgb 的内存布局是 BGR，需先把 R/G/B 交换为 B/G/R 再编码，颜色才正确。
+    /// SCSI 与 LY 两类设备共用。
+    /// </summary>
+    private static byte[] EncodeJpeg(byte[] rgb888Data, int width, int height)
+    {
+        byte[] jpegData;
+        using (var bmp = new Bitmap(width, height, DrawPixelFormat.Format24bppRgb))
+        {
+            var rect = new Rectangle(0, 0, width, height);
+            var bmpData = bmp.LockBits(rect, ImageLockMode.WriteOnly, DrawPixelFormat.Format24bppRgb);
+
+            byte[] bgr = new byte[rgb888Data.Length];
+            for (int i = 0; i < rgb888Data.Length; i += 3)
+            {
+                bgr[i] = rgb888Data[i + 2];      // B
+                bgr[i + 1] = rgb888Data[i + 1];  // G
+                bgr[i + 2] = rgb888Data[i];      // R
+            }
+            Marshal.Copy(bgr, 0, bmpData.Scan0, bgr.Length);
+            bmp.UnlockBits(bmpData);
+
+            // JPEG 压缩，质量 95
+            var jpegEncoder = ImageCodecInfo
+                .GetImageEncoders()
+                .First(c => c.FormatID == ImageFormat.Jpeg.Guid);
+            var encoderParams = new EncoderParameters(1);
+            encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, 95L);
+
+            using var ms = new MemoryStream();
+            bmp.Save(ms, jpegEncoder, encoderParams);
+            encoderParams.Dispose();
+            jpegData = ms.ToArray();
+        }
+        return jpegData;
+    }
+
+    /// <summary>
     /// HID 帧发送（原版 ThreadSendDeviceDataH 逻辑）
     /// 20 字节头 + RGB888 数据，对齐到 512 字节
     /// </summary>
@@ -670,20 +784,11 @@ public class LcdController : IDisposable, INotifyPropertyChanged
     {
         if (_writer == null || ActiveDeviceInfo == null) return;
 
-        int dataLen = rgb888Data.Length;
-        int totalLen = dataLen + 20;
-        // 对齐到 512
-        totalLen = (totalLen / 512 + (totalLen % 512 != 0 ? 1 : 0)) * 512;
-
-        byte[] frame = new byte[totalLen];
-        // 20 字节头，bytes 16-19: 数据长度（大端）
-        frame[16] = (byte)((dataLen >> 24) & 0xFF);
-        frame[17] = (byte)((dataLen >> 16) & 0xFF);
-        frame[18] = (byte)((dataLen >> 8) & 0xFF);
-        frame[19] = (byte)(dataLen & 0xFF);
-        Buffer.BlockCopy(rgb888Data, 0, frame, 20, dataLen);
-
-        _writer.Transfer(frame, 0, frame.Length, 3000, out _);
+        // 20 字节 DA/DB/DC/DD 头 + 按型号编码的图像（RGB565 小端或 JPEG），对齐到 512
+        var frame = HidLcdProtocol.CreateFrame(rgb888Data, ActiveDeviceInfo);
+        var result = _writer.Transfer(frame, 0, frame.Length, 3000, out var written);
+        if (result != ErrorCode.None || written != frame.Length)
+            throw new IOException($"HID 帧传输失败: {result}, {written}/{frame.Length} 字节");
     }
 
     /// <summary>
@@ -718,13 +823,26 @@ public class LcdController : IDisposable, INotifyPropertyChanged
 
     /// <summary>
     /// LY 帧发送（原版 ThreadSendDeviceDataLY 逻辑）
-    /// 512 字节分块，16 字节头 + 496 字节数据
+    /// 负载为 JPEG（质量 95，原版 ImageToJpg），上限 450000 字节，超出丢弃本帧；
+    /// 512 字节分块（16 字节头 + 496 字节数据），分块数对齐到 4 的倍数，
+    /// 每 4096 字节一次 USB 写入，结束后读取 512 字节响应。
     /// </summary>
     private void SendLyFrame(byte[] rgb888Data)
     {
         if (_writer == null || ActiveDeviceInfo == null) return;
 
-        int dataLen = rgb888Data.Length;
+        int w = ActiveDeviceInfo.Width;
+        int h = ActiveDeviceInfo.Height;
+
+        // LY 设备帧负载为 JPEG（非裸 RGB888），超 450000 字节丢弃本帧（同原版）
+        byte[] jpegData = EncodeJpeg(rgb888Data, w, h);
+        if (jpegData.Length > 450000)
+        {
+            ErrorOccurred?.Invoke(this, $"LY 帧 JPEG 过大 ({jpegData.Length} B)，已丢弃");
+            return;
+        }
+
+        int dataLen = jpegData.Length;
         int chunkPayloadSize = 496;
         int totalChunks = dataLen / chunkPayloadSize + 1;
         int lastChunkSize = dataLen % chunkPayloadSize;
@@ -756,7 +874,7 @@ public class LcdController : IDisposable, INotifyPropertyChanged
             allData[offset + 11] = (byte)(i & 0xFF);
             allData[offset + 12] = (byte)((i >> 8) & 0xFF);
 
-            Buffer.BlockCopy(rgb888Data, i * chunkPayloadSize, allData, offset + 16, payloadSize);
+            Buffer.BlockCopy(jpegData, i * chunkPayloadSize, allData, offset + 16, payloadSize);
         }
 
         // 分 4096 字节写入

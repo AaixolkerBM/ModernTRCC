@@ -907,3 +907,81 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
     0%, 100% { box-shadow: 0 0 4px var(--success); }
     50% { box-shadow: 0 0 12px var(--success); }
 }
+
+/* ==================== 屏幕切换条（多屏） ==================== */
+.screen-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+    padding: 6px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    width: fit-content;
+    max-width: 100%;
+    overflow-x: auto;
+}
+.screen-bar-inner {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+.screen-bar-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-family: var(--font-body);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: var(--transition);
+}
+.screen-bar-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.screen-bar-item.active {
+    background: var(--accent);
+    color: #0a0a0b;
+    font-weight: 600;
+}
+.screen-bar-item.active::before {
+    content: '';
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex: none;
+}
+.screen-bar-item.connected:not(.active)::before {
+    content: '';
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--success);
+    flex: none;
+}
+
+/* ==================== 当前屏幕标签 ==================== */
+.cur-screen-label {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--accent-glow);
+    border: 1px solid rgba(200, 164, 94, 0.25);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+/* 设置页「开机自动播放」标题行：标题 + 屏幕标签同行 */
+.section-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.section-title-row .section-subtitle { margin-bottom: 0; }
